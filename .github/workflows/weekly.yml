@@ -1,0 +1,24 @@
+name: weekly-event-collection
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC (Sunday 2am ET)
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Run a single collector (e.g. tourneymachine)"
+        required: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Run collectors
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_KEY: ${{ secrets.INGEST_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python run.py ${{ github.event.inputs.only }}
