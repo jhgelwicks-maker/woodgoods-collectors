@@ -9,6 +9,12 @@ Weekly crawl of tournament sources into the Woodgoods Ops Supabase database. Sto
 4. Actions → weekly-event-collection → Run workflow. First run takes ~5 minutes (2,500 Tourney Machine events with team counts).
 5. Clay: paste your Clay webhook table URL into the app's Settings; the app posts gate-passed rows. (Reference: a Supabase webhook on `event_candidates` (insert, update) → your Clay webhook URL (or a Zapier catch hook that filters on `gate_passed = true and clay_sent_at is null`).
 
+## Sources
+- tourneymachine — JSON endpoint, all states, team counts
+- mayouthsoccer — MA soccer sanctioned list (needs ANTHROPIC_API_KEY)
+- fairsandfestivals — all 50 states; vendor fees/contacts/attendance are paid-member fields. Optional secret `FF_COOKIE` (your logged-in cookie string) unlocks them
+- eventeny — all 50 states; booth fees, application deadline, rain date, attendance when stated, tags
+
 ## Adding a source
 Copy `collectors/mayouthsoccer.py` (HTML page → Claude → rows) or `collectors/tourneymachine.py` (JSON endpoint → rows). Return `(rows, errors)` with the keys documented in `collectors/common.py`. Add the module name to `COLLECTORS` in `run.py`.
 
