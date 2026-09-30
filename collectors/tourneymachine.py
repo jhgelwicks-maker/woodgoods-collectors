@@ -30,9 +30,10 @@ def search_all():
         log.info("tourneymachine query %r -> %d total so far", q, len(seen))
     return seen
 
-def team_counts(ids, workers=6):
+def team_counts(ids, workers=2):
     def one(tid):
         b = common.polite_get(EVENT.format(id=tid), headers=H_HTML)
+        time.sleep(0.6)
         if not b: return tid, None
         opts = OPT.findall(b)
         teams = {o[0] for o in opts}; divs = collections.Counter(o[2] for o in opts)

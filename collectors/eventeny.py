@@ -87,7 +87,7 @@ def collect(states=STATES):
     for st in states:
         urls = listing(st)
         log.info("eventeny %s: %d events", st, len(urls))
-        with ThreadPoolExecutor(6) as ex:
+        with ThreadPoolExecutor(3) as ex:
             evs = list(ex.map(event, urls))
         for u, ev in zip(urls, evs):
             if not ev or not ev["name"]: errors += 1; continue

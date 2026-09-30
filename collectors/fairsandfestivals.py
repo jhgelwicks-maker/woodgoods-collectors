@@ -64,11 +64,19 @@ def collect(states=STATES, detail=True):
     rows, errors = [], 0
     for st in states:
         page = common.polite_get(f"{BASE}/states/{st}/")
-        if not page: errors += 1; continue
-        items = parse_listing(page, st)
+        items = parse_listing(page, st) if page else []
+        if not items:                      # a blank page usually means we were throttled; wait and retry once
+            time.sleep(30)
+            page = common.polite_get(f"{BASE}/states/{st}/")
+            items = parse_listing(page, st) if page else []
+            if not items and st not in ("AK", "HI", "DC", "ND", "SD", "WY"): errors += 1
+        time.sleep(1.5)
         log.info("fairsandfestivals %s: %d listings", st, len(items))
-        with ThreadPoolExecutor(6) as ex:
-            dets = list(ex.map(lambda it: enrich_detail(it["url"]) if (detail and it["url"]) else {}, items))
+        def _det(it):
+            time.sleep(1.0)
+            return enrich_detail(it["url"]) if (detail and it["url"]) else {}
+        with ThreadPoolExecutor(2) as ex:
+            dets = list(ex.map(_det, items))
         for it, det in zip(items, dets):
             start = det.get("start") or it["start"]; end = det.get("end") or start
             fee_lo = fee_hi = None

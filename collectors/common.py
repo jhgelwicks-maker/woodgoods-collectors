@@ -12,7 +12,8 @@ Every collector returns a list of dicts with these keys (missing = None):
   listing_url, official_url
   raw (dict, kept as jsonb for debugging)
 """
-import os, re, json, time, datetime, logging, requests
+import os, re, json, time, datetime, logging, requests, urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 log = logging.getLogger("collectors")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -77,9 +78,18 @@ class Supabase:
         return res.json() if res.text else {}
 
     def upsert_candidates(self, rows, chunk=400):
+        merged = {}
+        for r in rows:
+            nr = {k: v for k, v in normalize(r).items() if v is not None}
+            key = nr["dedupe_key"]
+            if key in merged:
+                merged[key].update(nr)          # later row fills gaps, never blanks a value
+            else:
+                merged[key] = nr
+        rows = list(merged.values())
         n = 0
         for i in range(0, len(rows), chunk):
-            batch = [normalize(r) for r in rows[i:i+chunk]]
+            batch = rows[i:i+chunk]
             self._post({"source": batch[0]["source"] if batch else None, "rows": batch})
             n += len(batch)
         return n
@@ -88,13 +98,18 @@ class Supabase:
         self._post({"source": source, "run": {"started_at": started, "finished_at": datetime.datetime.utcnow().isoformat()+"Z",
                     "rows_seen": rows_seen, "rows_upserted": rows_upserted, "errors": errors, "note": note[:2000]}})
 
-def polite_get(url, headers=None, timeout=40, tries=3, sleep=1.0):
+INSECURE_HOSTS = {"mayouthsoccer.org"}   # sites with a broken certificate chain
+
+def polite_get(url, headers=None, timeout=40, tries=4, sleep=1.0):
     h = {**UA, **(headers or {})}
+    verify = not any(host in url for host in INSECURE_HOSTS)
     for i in range(tries):
         try:
-            r = requests.get(url, headers=h, timeout=timeout)
+            r = requests.get(url, headers=h, timeout=timeout, verify=verify)
             if r.status_code == 200: return r.text
             log.warning("GET %s -> %s", url, r.status_code)
+            if r.status_code in (429, 403, 503):
+                time.sleep(15 * (i + 1)); continue      # back off hard when rate-limited
         except requests.RequestException as e:
             log.warning("GET %s failed: %s", url, e)
         time.sleep(sleep * (i + 1))
