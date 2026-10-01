@@ -23,27 +23,50 @@ def _between(t, a, b, maxlen=600):
     seg = t[i + len(a): j if 0 < j < i + len(a) + maxlen else i + len(a) + maxlen]
     return seg.strip(" |")
 
-def listing(state):
+def listing(state=None):
+    """Eventeny's ?state= filter only applies to page 1; pages 2+ are the national feed.
+    So we walk the national feed once and assign state from each event's own JSON-LD address."""
     urls = []
-    for page in range(1, 40):
-        h = common.polite_get(f"{BASE}/events/?state={state}&page={page}")
+    for page in range(1, 400):
+        h = common.polite_get(f"{BASE}/events/?page={page}")
         if not h: break
-        found = [u.replace(".com//", ".com/") for u in CARD_RE.findall(h)]
-        if not found: break
+        found = [u.replace(".com//", ".com/").split("?")[0] for u in CARD_RE.findall(h)]
         new = [u for u in found if u not in urls]
         if not new: break
         urls += new; time.sleep(0.4)
     return urls
 
+LD_RE = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
+def _ld(d):
+    import json
+    for m in LD_RE.findall(d):
+        try:
+            j = json.loads(m)
+            if isinstance(j, dict) and j.get("@type") in ("Event", "Festival", "MusicEvent", "SocialEvent", "Fair", "ExhibitionEvent"): return j
+        except Exception: pass
+    return {}
+
 def event(url):
     d = common.polite_get(url)
     if not d: return None
+    ld = _ld(d)
     t = _txt(d)
     name = html.unescape(re.search(r"<title>(.*?)\s*-\s*Eventeny", d, re.S).group(1)).strip() if re.search(r"<title>(.*?)- Eventeny", d) else None
     org = _between(t, "Hosted by |", "|", 120)
     date_txt = _between(t, "Starts on |", "|", 80)
     m = re.search(r"(\w+),\s+(\w+)\s+(\d+)\w*,\s+(\d{4})", date_txt or "")
     start, _ = common.parse_date_range(f"{m[2][:3]} {m[3]}, {m[4]}") if m else (None, None)
+    ld_start = (ld.get("startDate") or "")[:10]; ld_end = (ld.get("endDate") or "")[:10]
+    try:
+        import datetime as _dt
+        if ld_start: start = _dt.date.fromisoformat(ld_start)
+        ld_end_d = _dt.date.fromisoformat(ld_end) if ld_end else None
+    except Exception: ld_end_d = None
+    loc_ld = (ld.get("location") or {}); addr = loc_ld.get("address") if isinstance(loc_ld, dict) else None
+    if isinstance(addr, dict) and addr.get("addressLocality"):
+        ld_city_state = f"{addr['addressLocality']}, {common_state(addr.get('addressRegion') or '')}"
+    else: ld_city_state = None
+    org_ld = (ld.get("organizer") or {}).get("name") if isinstance(ld.get("organizer"), dict) else None
     loc = _between(t, date_txt + " |", "|", 120) if date_txt else None
     about = _between(t, "About the event |", "| Show more", 3000) or ""
     att = ATTEND_RE.search(about)
@@ -63,12 +86,14 @@ def event(url):
             nums = [float(x.replace(",", "")) for x in FEE_RE.findall(std.group(1) if std else (v["fees_text"] or ""))]
             v["fee_min"], v["fee_max"] = (min(nums), max(nums)) if nums else (None, None)
             v["app_count"] = len(vend_ids)
-    end_m = re.search(r"Date: \w{3} \d+, \d{4} [^|]*?- (\w{3}) (\d+), (\d{4})", (v.get("fees_text") or "") + " " + t)
-    end, _ = common.parse_date_range(f"{end_m[1]} {end_m[2]}, {end_m[3]}") if end_m else (start, None)
+    end = ld_end_d or start
     city_state = None
     if loc:
         parts = [p.strip() for p in loc.split(",")]
         if len(parts) >= 2: city_state = f"{parts[0]}, {common_state(parts[1])}"
+    if ld_city_state: city_state = ld_city_state
+    org = org or org_ld
+    if ld.get("name"): name = ld["name"]
     return {"name": name, "organizer": org, "start": start, "end": end or start, "loc": loc, "city_state": city_state,
             "about": about, "attendance": int(att.group(1).replace(",", "")) if att else None,
             "attendance_text": att.group(0) if att else None, "tags": tags, "vendor": v,
@@ -82,11 +107,12 @@ _ABBR = {"Massachusetts":"MA","New Hampshire":"NH","Connecticut":"CT","Rhode Isl
          "West Virginia":"WV","Idaho":"ID","Montana":"MT","Wyoming":"WY","North Dakota":"ND","South Dakota":"SD","Alaska":"AK","Hawaii":"HI","District of Columbia":"DC"}
 def common_state(s): return _ABBR.get(s.strip(), s.strip()[:2].upper())
 
-def collect(states=STATES):
+def collect(states=None):
     rows, errors = [], 0
-    for st in states:
-        urls = listing(st)
-        log.info("eventeny %s: %d events", st, len(urls))
+    for st in [None]:
+        urls = listing()
+        if states: pass   # state filtering happens in the gate; we keep everything
+        log.info("eventeny national feed: %d events", len(urls))
         with ThreadPoolExecutor(3) as ex:
             evs = list(ex.map(event, urls))
         for u, ev in zip(urls, evs):

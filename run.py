@@ -2,7 +2,7 @@ import os, sys, datetime, importlib, traceback
 from collectors import common
 from collectors.common import log
 
-COLLECTORS = ["tourneymachine", "mayouthsoccer", "fairsandfestivals", "eventeny"]   # add a module name here per new source
+COLLECTORS = ["tourneymachine", "mayouthsoccer", "fairsandfestivals", "eventeny", "woodgoods_lacrosse"]   # add a module name here per new source
 NEEDS_ANTHROPIC = {"mayouthsoccer"}
 
 def main():
