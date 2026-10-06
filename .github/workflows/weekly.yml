@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false            # one source failing never cancels the others
       matrix:
-        source: [tourneymachine, fairsandfestivals, eventeny, mayouthsoccer]
+        source: [tourneymachine, fairsandfestivals, eventeny, mayouthsoccer, woodgoods_lacrosse]
     name: ${{ matrix.source }}
     steps:
       - uses: actions/checkout@v4
@@ -23,4 +23,5 @@ jobs:
           INGEST_KEY: ${{ secrets.INGEST_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FF_COOKIE: ${{ secrets.FF_COOKIE }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
         run: python run.py ${{ matrix.source }}
