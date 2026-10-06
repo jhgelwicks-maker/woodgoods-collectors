@@ -93,7 +93,7 @@ def parse_age_groups(text, season_year=None):
     for m in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)\s+grade\b", text, re.I):
         g = int(m.group(1))
         if 1 <= g <= 12: grads.add(y + (12 - g) + 1)
-    if re.search(r"\b(HS|high school|varsity|JV)\b", text, re.I): grads.update({y + 1, y + 4})
+    if not grads and re.search(r"\b(HS|high school|varsity|JV)\b", text, re.I): grads.update({y + 1, y + 4})
     if re.search(r"\b(adult|men'?s|women'?s|masters|open)\b", text, re.I) and not grads: return "Adult", None, None, None
     gender = None
     if re.search(r"\b(boys?|men)\b", text, re.I) and not re.search(r"\b(girls?|women)\b", text, re.I): gender = "boys"
@@ -265,6 +265,69 @@ def festival_fit(r):
     if ds is not None: add(int((ds - 50) * 0.2), f"destination {ds}")
     return max(0, min(100, score)), why, None
 
+# ---- Cross-source identity ----------------------------------------------------------------
+ORG_ALIASES = {"ptlacrosse": "primetime", "prime time": "primetime", "primetime lacrosse": "primetime", "apex lacrosse events": "apex",
+               "apex lacrosse": "apex", "nxt sports": "nxt", "nxt lacrosse": "nxt", "mlt": "mlt", "madlax": "madlax",
+               "nh tomahawks": "tomahawks", "new hampshire tomahawks": "tomahawks", "hogan's lacrosse": "hogans", "hogans lacrosse": "hogans",
+               "laxachusetts girls": "laxachusetts", "laxachusetts boys": "laxachusetts", "adrenaline lacrosse": "adrenaline",
+               "victory event series": "victory", "trilogy lacrosse": "trilogy", "legends lacrosse": "legends", "buku lacrosse": "buku",
+               "aloha tournaments": "aloha", "alliance lacrosse league": "alliance", "premier lacrosse league": "pll", "pll": "pll"}
+_STOP = re.compile(r"\b(20\d\d|\d{1,3}(?:st|nd|rd|th)|annual|the|presented by.*$|powered by.*$|tournament|tourney|invitational|classic|showcase|event|lacrosse|lax|soccer|baseball|softball|volleyball|hockey|basketball|festival|fest|fair|boys|girls|youth|hs|high school|men'?s|women'?s)\b", re.I)
+
+def canon_org(name):
+    if not name: return None
+    n = re.sub(r"[^a-z0-9 ]+", " ", name.lower()); n = re.sub(r"\s+", " ", n).strip()
+    n = re.sub(r"\b(llc|inc|events?|sports?|group|series)\b", "", n).strip()
+    return ORG_ALIASES.get(n) or ORG_ALIASES.get(name.lower().strip()) or n or None
+
+def name_core(name):
+    """'2026 Boys Jersey Fall Invitational' -> 'jersey fall'"""
+    if not name: return None
+    n = _STOP.sub(" ", name.lower()); n = re.sub(r"[^a-z0-9 ]+", " ", n); n = re.sub(r"\s+", " ", n).strip()
+    return n or re.sub(r"[^a-z0-9 ]+", " ", name.lower()).strip()
+
+def fingerprint(name, sport, state):
+    core = name_core(name)
+    return f"{(sport or '').lower()}|{(state or '').upper()}|{core}" if core else None
+
+# ---- Tourney Machine documents + club parsing ---------------------------------------------
+DOC_RE = re.compile(r'https://assets\.tourneymachine\.com/Tournament/[^"\'\s]+\.(?:pdf|png|jpe?g|gif|docx?|xlsx?)', re.I)
+MAP_WORDS = re.compile(r"map|layout|site|field[- ]?plan|parking|venue|complex|directions", re.I)
+RULES_WORDS = re.compile(r"rule|regulation|policy|waiver|code of conduct", re.I)
+def parse_documents(page_html):
+    out = []
+    for u in dict.fromkeys(DOC_RE.findall(page_html or "")):
+        fn = u.rsplit("/", 1)[-1]
+        ext = fn.rsplit(".", 1)[-1].lower()
+        kind = "field_map" if MAP_WORDS.search(fn) else "rules" if RULES_WORDS.search(fn) else ("image" if ext in ("png", "jpg", "jpeg", "gif") else "document")
+        if kind == "image" and re.search(r"140x140|logo|icon", fn, re.I): kind = "logo"
+        out.append({"url": u, "filename": fn, "type": ext, "kind": kind})
+    return out or None
+
+_CLUB_COLORS = r"black|white|red|blue|green|gold|silver|orange|purple|navy|grey|gray|maroon|teal|yellow|pink|royal|carolina|columbia"
+_CLUB_STRIP = re.compile(r"\b(20[2-4]\d|\d{1,2}(?:u|th|st|nd|rd)|u\d{1,2}|boys?|girls?|" + _CLUB_COLORS + r"|select|premier|national|aa|aaa|hs|varsity|jv|youth)\b|[-\u2013/]", re.I)
+_TRAILING_NUM = re.compile(r"(?<=\s)\d{1,2}$|(?<=\s)\d{1,2}(?=\s)")   # standalone 1-2 digit tokens after the first word
+def club_from_team(team_name):
+    """'3d NE 2028 Red' -> '3d NE'; 'CT Lightning Gold-Wright' -> 'CT Lightning'; 'Aces 18-Cahill' -> 'Aces'"""
+    if not team_name: return None
+    t = team_name.split(" - ")[0]
+    t = re.split(r"[-\u2013](?=[A-Z][a-z])", t)[0]           # drop coach suffix like -Cahill
+    t = _CLUB_STRIP.sub(" ", t)
+    lead = re.match(r"^\s*(\d{1,2}\s)", t)                     # keep a leading number ('4 Leaf', '3d NE'); drop '18' etc. elsewhere
+    body = t[lead.end():] if lead else t
+    body = _TRAILING_NUM.sub(" ", " " + body)
+    t = (lead.group(1) if lead else "") + body
+    t = re.sub(r"\s+", " ", t).strip(" -")
+    return t or None
+
+def clubs_from_options(opts):
+    """opts = [(team_id, team_name, division)] -> sorted list of {club, teams}"""
+    c = {}
+    for _, name, _d in opts:
+        club = club_from_team(name)
+        if club: c[club] = c.get(club, 0) + 1
+    return [{"club": k, "teams": v} for k, v in sorted(c.items(), key=lambda kv: -kv[1])] or None
+
 def states_from(city_states):
     return sorted({c.split(", ")[-1] for c in (city_states or []) if ", " in c})
 
@@ -307,6 +370,13 @@ def normalize(row):
     for k in ("start_date", "end_date"):
         if isinstance(r.get(k), datetime.date): r[k] = r[k].isoformat()
     r["city_states"] = cs
+    r["organizer_canon"] = canon_org(r.get("organizer_name"))
+    r["name_core"] = name_core(r.get("name"))
+    r["event_fingerprint"] = fingerprint(r.get("name"), r.get("sport"), (r.get("state") or "").split(",")[0])
+    try:
+        d = datetime.date.fromisoformat(r["start_date"]) if isinstance(r.get("start_date"), str) else r.get("start_date")
+        r["calendar_week"] = d.isocalendar()[1] if d else None
+    except Exception: r["calendar_week"] = None
     r["last_seen_at"] = datetime.datetime.utcnow().isoformat() + "Z"
     return r
 
@@ -354,7 +424,7 @@ def polite_get(url, headers=None, timeout=40, tries=4, sleep=1.0):
             if r.status_code == 200: return r.text
             log.warning("GET %s -> %s", url, r.status_code)
             if r.status_code in (429, 403, 503):
-                time.sleep(15 * (i + 1)); continue      # back off hard when rate-limited
+                time.sleep(5 * (i + 1)); continue       # back off when rate-limited
         except requests.RequestException as e:
             log.warning("GET %s failed: %s", url, e)
         time.sleep(sleep * (i + 1))

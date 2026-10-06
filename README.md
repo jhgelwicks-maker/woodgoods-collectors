@@ -23,3 +23,6 @@ Edit rows in `filter_rules` (or the Lovable admin screen), then run `select rega
 
 ## Schedule
 Mondays 06:00 UTC. Change the cron in `.github/workflows/weekly.yml`. Run one source by hand with the `only` input.
+
+## Historical backfill (one-time)
+Actions → tourneymachine-history-backfill → Run workflow. Defaults cover 2020 → Oct 2026 (~120k short ids, ~31 jobs of 4,000, newest first, 6 at a time, roughly 8–10 hours wall time). Rows post as they are collected, so a throttled run still keeps everything up to that point. For 2016–2019 run again with start 15000, end 68000. Rows land in `event_history` via the ingest endpoint. Re-run later with a narrow range (e.g. 188500–195000) to top up finished events.

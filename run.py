@@ -22,6 +22,12 @@ def main():
             rows, errors = mod.collect()
             n = db.upsert_candidates(rows)
             log.info("%s: %d rows, %d upserted, %d errors", name, len(rows), n, errors)
+            if hasattr(mod, "collect_history"):                      # archive just-finished events into event_history
+                hrows, herr = mod.collect_history()
+                errors += herr
+                for i in range(0, len(hrows), 150):
+                    db._post({"source": f"{name}-history", "history": [{k: (v.isoformat() if isinstance(v, datetime.date) else v) for k, v in r.items()} for r in hrows[i:i+150]]})
+                log.info("%s: %d finished events archived to history", name, len(hrows))
         except Exception as e:
             failures += 1; note = traceback.format_exc()
             log.error("%s failed: %s", name, e)
