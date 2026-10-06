@@ -1,0 +1,41 @@
+name: tourneymachine-history-backfill
+on:
+  workflow_dispatch:
+    inputs:
+      start:      { description: "First short id (R#). 2020 ≈ 68000 (default). 2016 ≈ 15000 for a second, older run", default: "68000" }
+      end:        { description: "Last short id (exclusive). Oct 2026 ≈ 188500", default: "188500" }
+      shard_size: { description: "Ids per job (keep ≤ 4000 to stay under the time limit)", default: "4000" }
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs: { matrix: "${{ steps.m.outputs.matrix }}" }
+    steps:
+      - id: m
+        run: |
+          python3 - <<'EOF2' >> "$GITHUB_OUTPUT"
+          import json, os
+          s, e, k = int("${{ inputs.start }}"), int("${{ inputs.end }}"), int("${{ inputs.shard_size }}")
+          ranges = [f"{a}-{min(a+k, e)}" for a in range(s, e, k)]
+          ranges.reverse()                       # newest events first: if we get blocked, the recent years are already in
+          print("matrix=" + json.dumps({"range": ranges}))
+          EOF2
+  backfill:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    name: R${{ matrix.range }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Backfill R${{ matrix.range }}
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_KEY: ${{ secrets.INGEST_KEY }}
+        run: |
+          R="${{ matrix.range }}"; python -m collectors.backfill_tourneymachine "${R%-*}" "${R#*-}"
