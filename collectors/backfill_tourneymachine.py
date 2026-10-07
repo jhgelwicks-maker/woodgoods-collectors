@@ -204,7 +204,7 @@ BLOCK_LIMIT = 25   # this many consecutive failed page fetches = we are being th
 
 def collect(start, end, tracked_only=True, with_sites=True, sink=None):
     rows, errors, blocked_streak, pending = [], 0, 0, []
-    paused_once = False; collect.last_id = start
+    paused_once = False; collect.last_id = start; collect.upcoming = 0
     def flush():
         nonlocal pending
         if sink and pending:
@@ -233,6 +233,8 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
         if not ev["sport"]:
             ev["sport"] = infer_sport(f"{ev['name']} {ev['divisions']}") or "unknown"
         if tracked_only and ev["sport"] not in TRACKED and ev["sport"] != "unknown": continue
+        if (ev["end"] or ev["start"]) >= datetime.date.today():
+            collect.upcoming += 1; continue     # not played yet: no final team count. The weekly job archives it once it ends
         per_site, games, sched_teams, fields = ({}, {}, 0, {})
         if with_sites and ev["div_ids"]:
             per_site, games, sched_teams, fields = site_counts(ev["tid"], ev["div_ids"][:MAX_DIVISIONS], ev["venues"])
@@ -254,14 +256,22 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
 def main():
     start, end = int(sys.argv[1]), int(sys.argv[2])
     db = common.Supabase(); started = datetime.datetime.utcnow().isoformat() + "Z"
+    backup = os.environ.get("BACKUP_DIR")
+    backup_file = os.path.join(backup, f"R{start}-{end}.jsonl") if backup else None
+    if backup: os.makedirs(backup, exist_ok=True)
     def sink(batch):
-        db._post({"source": "tourneymachine-history", "history": [{k: (v.isoformat() if isinstance(v, datetime.date) else v) for k, v in r.items()} for r in batch]})
+        rows = [{k: (v.isoformat() if isinstance(v, datetime.date) else v) for k, v in r.items()} for r in batch]
+        if backup_file:                      # write to disk first, so a rejected post loses nothing
+            with open(backup_file, "a") as f:
+                for r in rows: f.write(json.dumps(r, default=str) + "\n")
+                f.flush(); os.fsync(f.fileno())
+        db._post({"source": "tourneymachine-history", "history": rows})
     t0 = time.time()
     try:
         rows, errors = collect(start, end, sink=sink)
     except IngestRejected as ex:
-        log.error("STOPPED: %s. Nothing after this point was saved. Fix the ingest endpoint, then rerun with start=%d end=%d",
-                  ex, collect.last_id, end)
+        log.error("STOPPED: %s. Rows up to here are in %s; resend them with: python -m collectors.replay_history <file>. "
+                  "Then rerun with start=%d end=%d", ex, backup_file or "(no backup file: BACKUP_DIR not set)", collect.last_id, end)
         try: db.log_run(f"tourneymachine-history R{start}-{end}", 0, 0, 1, started, note=f"shard backfill stopped: {ex}")
         except Exception: pass
         sys.exit(1)
@@ -269,7 +279,8 @@ def main():
     note = "shard backfill" + ("" if last >= end - 1 else f"; stopped early at R{last}; rerun with start={last} end={end}")
     db.log_run(f"tourneymachine-history R{start}-{end}", len(rows), len(rows), errors, started, note=note)
     secs = time.time() - t0
-    log.info("backfill R%d-R%d: %d rows, %d errors, %.0f s (%.2f s/id)", start, end, len(rows), errors, secs, secs / max(1, last - start + 1))
+    log.info("backfill R%d-R%d: %d rows, %d skipped as not finished yet, %d errors, %.0f s (%.2f s/id)",
+             start, end, len(rows), collect.upcoming, errors, secs, secs / max(1, last - start + 1))
 
 if __name__ == "__main__":
     main()
