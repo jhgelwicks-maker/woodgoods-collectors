@@ -9,12 +9,17 @@ Repo: github.com/jhgelwicks-maker/woodgoods-collectors (make it PUBLIC: private 
 2,000 Actions minutes/month, and the backfill needs far more). Owner: Justin Gelwicks,
 non-developer. Explain in plain language; never assume git or terminal familiarity.
 
+**Read `../BUSINESS.md` (i.e. `~/WoodGoodsAI/BUSINESS.md`) at the start of every session.** It holds the
+business context and goals. It lives outside this repo on purpose because the repo is public: never
+copy it, or the money, contacts or plans in it, into the repo.
+
 ## Architecture
 
 - **Collectors (this repo, Python 3.12, GitHub Actions)** scrape sources and POST rows to the app.
 - **App (Lovable, separate — do not try to edit it here)** owns the database, UI, ingest endpoint,
   nightly jobs (precedent matching, recurrence placeholders, gating, benchmarks). Changes to the
-  app are requested by messaging the Lovable project "Woodgoods Ops" in plain English.
+  app are requested by messaging the Lovable project in plain English. In Lovable the project is named
+  "Hat Hustle HQ" (the app itself says Woodgoods Ops).
 - There is no direct database access from here. Everything goes through the ingest endpoint.
 
 ## Ingest contract (the thing that has never been verified end to end — do this FIRST)
