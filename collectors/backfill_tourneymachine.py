@@ -24,6 +24,8 @@ TEAMID = re.compile(r"data-teamid='(h[0-9a-f]{31})'")
 DIV_WORKERS = 4      # division schedule pages fetched in parallel per event
 MAX_DIVISIONS = 16   # divisions per event; enough to see which fields and venues are in use
 LINK_SLEEP = 0.25    # pause between short-link fetches
+EARLIEST = datetime.date(2014, 1, 1)   # Tourney Machine short links start ~2016; earlier dates are typos (e.g. year 2000)
+JUNK_NAME = re.compile(r"\b(test|testing|fake|mock|demo|sample|dummy)\b", re.I)
 
 class IngestRejected(RuntimeError):
     """The ingest endpoint refused a batch. The shard stops instead of crawling for hours into nothing."""
@@ -204,7 +206,7 @@ BLOCK_LIMIT = 25   # this many consecutive failed page fetches = we are being th
 
 def collect(start, end, tracked_only=True, with_sites=True, sink=None):
     rows, errors, blocked_streak, pending = [], 0, 0, []
-    paused_once = False; collect.last_id = start; collect.upcoming = 0
+    paused_once = False; collect.last_id = start; collect.upcoming = 0; collect.junk = 0
     def flush():
         nonlocal pending
         if sink and pending:
@@ -233,6 +235,8 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
         if not ev["sport"]:
             ev["sport"] = infer_sport(f"{ev['name']} {ev['divisions']}") or "unknown"
         if tracked_only and ev["sport"] not in TRACKED and ev["sport"] != "unknown": continue
+        if ev["start"] < EARLIEST or JUNK_NAME.search(ev["name"] or ""):
+            collect.junk += 1; continue         # mistyped year or an organizer's test event
         if (ev["end"] or ev["start"]) >= datetime.date.today():
             collect.upcoming += 1; continue     # not played yet: no final team count. The weekly job archives it once it ends
         per_site, games, sched_teams, fields = ({}, {}, 0, {})
@@ -279,8 +283,8 @@ def main():
     note = "shard backfill" + ("" if last >= end - 1 else f"; stopped early at R{last}; rerun with start={last} end={end}")
     db.log_run(f"tourneymachine-history R{start}-{end}", len(rows), len(rows), errors, started, note=note)
     secs = time.time() - t0
-    log.info("backfill R%d-R%d: %d rows, %d skipped as not finished yet, %d errors, %.0f s (%.2f s/id)",
-             start, end, len(rows), collect.upcoming, errors, secs, secs / max(1, last - start + 1))
+    log.info("backfill R%d-R%d: %d rows, %d skipped as not finished yet, %d skipped as junk, %d errors, %.0f s (%.2f s/id)",
+             start, end, len(rows), collect.upcoming, collect.junk, errors, secs, secs / max(1, last - start + 1))
 
 if __name__ == "__main__":
     main()
