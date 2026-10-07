@@ -4,7 +4,7 @@ on:
     inputs:
       start:      { description: "First short id (R#). 2020 ≈ 68000 (default). 2016 ≈ 15000 for a second, older run", default: "68000" }
       end:        { description: "Last short id (exclusive). Oct 2026 ≈ 188500", default: "188500" }
-      shard_size: { description: "Ids per job (keep ≤ 4000 to stay under the time limit)", default: "4000" }
+      shard_size: { description: "Ids per job (1500 fits comfortably in the 170-min limit)", default: "1500" }
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 170
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 10
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     name: R${{ matrix.range }}
     steps:

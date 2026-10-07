@@ -5,7 +5,8 @@ and the per-division schedules, from which teams-per-location is computed.
 Run as a sharded one-off workflow, not weekly:  python -m collectors.backfill_tourneymachine START END
 Rows are posted to the ingest endpoint as {"history": [...]} -> event_history table."""
 import re, sys, os, json, html, time, datetime, collections, statistics
-from . import common, weather
+from concurrent.futures import ThreadPoolExecutor
+from . import common
 from .common import log
 
 UA = {"user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/152.0 Safari/537.36",
@@ -20,6 +21,12 @@ GAME_FULL = re.compile(r"<tr class='schedule_row (date_\d{8})[^']*'[^>]*data-gam
 TIME = re.compile(r"(\d{1,2}:\d{2}\s*[AP]M)")
 FAC = re.compile(r"data-facilityid='[^']*'>\s*([^<]+?)\s*</td>")
 TEAMID = re.compile(r"data-teamid='(h[0-9a-f]{31})'")
+DIV_WORKERS = 4      # division schedule pages fetched in parallel per event
+MAX_DIVISIONS = 16   # divisions per event; enough to see which fields and venues are in use
+LINK_SLEEP = 0.25    # pause between short-link fetches
+
+class IngestRejected(RuntimeError):
+    """The ingest endpoint refused a batch. The shard stops instead of crawling for hours into nothing."""
 
 def _get(url):
     import requests
@@ -80,8 +87,12 @@ def site_counts(tid, div_ids, venues):
     team_sites = collections.defaultdict(set); games = collections.Counter(); div_sites = collections.defaultdict(set)
     fields = collections.defaultdict(set)      # site -> distinct field names
     game_log = []                              # (date, minutes-of-day, site, field)
-    for dv in div_ids:
-        r = _get(f"{BASE}/Public/Results/Division.aspx?IDTournament={tid}&IDDivision={dv}"); time.sleep(0.4)
+    def fetch(dv):
+        r = _get(f"{BASE}/Public/Results/Division.aspx?IDTournament={tid}&IDDivision={dv}"); time.sleep(0.25)
+        return r
+    with ThreadPoolExecutor(DIV_WORKERS) as ex:
+        pages = list(ex.map(fetch, div_ids))
+    for dv, r in zip(div_ids, pages):
         if not r: continue
         for dcls, row in GAME_FULL.findall(r.text):
             f = FAC.search(row)
@@ -198,10 +209,11 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
         nonlocal pending
         if sink and pending:
             try: sink(pending)
-            except Exception as ex: log.error("post failed: %s", ex)
+            except Exception as ex:
+                raise IngestRejected(f"post of {len(pending)} rows failed at R{collect.last_id}: {ex}") from ex
             pending = []
     for n in range(start, end):
-        r = _get(f"{BASE}/R{n}"); time.sleep(0.5)
+        r = _get(f"{BASE}/R{n}"); time.sleep(LINK_SLEEP)
         collect.last_id = n
         if r is None:
             blocked_streak += 1
@@ -223,7 +235,7 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
         if tracked_only and ev["sport"] not in TRACKED and ev["sport"] != "unknown": continue
         per_site, games, sched_teams, fields = ({}, {}, 0, {})
         if with_sites and ev["div_ids"]:
-            per_site, games, sched_teams, fields = site_counts(ev["tid"], ev["div_ids"][:40], ev["venues"])
+            per_site, games, sched_teams, fields = site_counts(ev["tid"], ev["div_ids"][:MAX_DIVISIONS], ev["venues"])
         profile = getattr(site_counts, "last_schedule", None) if ev["div_ids"] else None
         row = build_row(n, ev, per_site, games, sched_teams, fields, profile)
         _, lo, hi, gender = common.parse_age_groups(f"{ev['divisions']} {ev['name']}", ev["start"].year if ev["start"] else None)
@@ -233,10 +245,7 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
         row["state"] = st; row["name_core"] = common.name_core(row["name"])
         row["event_fingerprint"] = common.fingerprint(row["name"], row["sport"], st)
         row["calendar_week"] = row["start_date"].isocalendar()[1] if row["start_date"] else None
-        v0 = next((v for v in ev["venues"] if v.get("lat") and v.get("long")), None)
-        if v0:
-            try: row["weather_actual"] = weather.actual(float(v0["lat"]), float(v0["long"]), row["start_date"], row["end_date"])
-            except Exception as ex: log.warning("weather failed R%d: %s", n, ex)
+        # weather_actual is filled nightly by the app; fetching it here doubled the time per event
         rows.append(row); pending.append(row)
         if len(pending) >= 150: flush(); log.info("backfill R%d: %d rows so far", n, len(rows))
     flush()
@@ -247,11 +256,20 @@ def main():
     db = common.Supabase(); started = datetime.datetime.utcnow().isoformat() + "Z"
     def sink(batch):
         db._post({"source": "tourneymachine-history", "history": [{k: (v.isoformat() if isinstance(v, datetime.date) else v) for k, v in r.items()} for r in batch]})
-    rows, errors = collect(start, end, sink=sink)
+    t0 = time.time()
+    try:
+        rows, errors = collect(start, end, sink=sink)
+    except IngestRejected as ex:
+        log.error("STOPPED: %s. Nothing after this point was saved. Fix the ingest endpoint, then rerun with start=%d end=%d",
+                  ex, collect.last_id, end)
+        try: db.log_run(f"tourneymachine-history R{start}-{end}", 0, 0, 1, started, note=f"shard backfill stopped: {ex}")
+        except Exception: pass
+        sys.exit(1)
     last = getattr(collect, "last_id", end)
-    note = "" if last >= end - 1 else f"stopped early at R{last}; rerun with start={last} end={end}"
+    note = "shard backfill" + ("" if last >= end - 1 else f"; stopped early at R{last}; rerun with start={last} end={end}")
     db.log_run(f"tourneymachine-history R{start}-{end}", len(rows), len(rows), errors, started, note=note)
-    log.info("backfill R%d-R%d: %d rows, %d errors", start, end, len(rows), errors)
+    secs = time.time() - t0
+    log.info("backfill R%d-R%d: %d rows, %d errors, %.0f s (%.2f s/id)", start, end, len(rows), errors, secs, secs / max(1, last - start + 1))
 
 if __name__ == "__main__":
     main()
