@@ -14,7 +14,7 @@ HOME = os.path.expanduser("~/WoodGoodsAI")
 ENV_FILE = os.path.join(HOME, ".export.env")
 ROOT = os.path.join(HOME, "backup", "db")
 LOG = os.path.join(HOME, "backup", "logs", "db-backup.log")
-PAGE = 2000
+PAGE = 1000   # the database caps every response at 1,000 rows
 CSV_COLS = {
     "event_history": ["dedupe_key", "source", "short_id", "name", "sport", "organizer_name", "start_date", "end_date", "city", "state",
                       "team_count", "division_count", "venue_count", "fields_used", "teams_per_field", "schedule_quality",
