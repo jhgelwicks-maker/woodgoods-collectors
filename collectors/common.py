@@ -12,7 +12,7 @@ Every collector returns a list of dicts with these keys (missing = None):
   listing_url, official_url
   raw (dict, kept as jsonb for debugging)
 """
-import os, re, json, time, datetime, logging, requests, urllib3
+import os, re, json, html, time, datetime, logging, requests, urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 log = logging.getLogger("collectors")
@@ -304,13 +304,15 @@ def parse_documents(page_html):
         out.append({"url": u, "filename": fn, "type": ext, "kind": kind})
     return out or None
 
-_CLUB_COLORS = r"black|white|red|blue|green|gold|silver|orange|purple|navy|grey|gray|maroon|teal|yellow|pink|royal|carolina|columbia"
+_CLUB_COLORS = (r"black|white|red|blue|green|gold|silver|orange|purple|navy|grey|gray|maroon|teal|yellow|pink|royal|carolina|columbia|"
+                r"charcoal|crimson|scarlet|lime|forest|kelly|sky|light|dark|cardinal|burgundy|bronze|platinum|graphite|steel|slate|tan|cream|elite|storm")
+_CLUB_JUNK = {"team", "teams", "lacrosse", "lax", "club", "the", "tbd", "tba", "open", "a", "b", "c"}
 _CLUB_STRIP = re.compile(r"\b(20[2-4]\d|\d{1,2}(?:u|th|st|nd|rd)|u\d{1,2}|boys?|girls?|" + _CLUB_COLORS + r"|select|premier|national|aa|aaa|hs|varsity|jv|youth)\b|[-\u2013/]", re.I)
 _TRAILING_NUM = re.compile(r"(?<=\s)\d{1,2}$|(?<=\s)\d{1,2}(?=\s)")   # standalone 1-2 digit tokens after the first word
 def club_from_team(team_name):
     """'3d NE 2028 Red' -> '3d NE'; 'CT Lightning Gold-Wright' -> 'CT Lightning'; 'Aces 18-Cahill' -> 'Aces'"""
     if not team_name: return None
-    t = team_name.split(" - ")[0]
+    t = html.unescape(team_name).split(" - ")[0]              # 'M&amp;D' -> 'M&D'
     t = re.split(r"[-\u2013](?=[A-Z][a-z])", t)[0]           # drop coach suffix like -Cahill
     t = _CLUB_STRIP.sub(" ", t)
     lead = re.match(r"^\s*(\d{1,2}\s)", t)                     # keep a leading number ('4 Leaf', '3d NE'); drop '18' etc. elsewhere
@@ -318,7 +320,7 @@ def club_from_team(team_name):
     body = _TRAILING_NUM.sub(" ", " " + body)
     t = (lead.group(1) if lead else "") + body
     t = re.sub(r"\s+", " ", t).strip(" -")
-    return t or None
+    return None if not t or t.lower() in _CLUB_JUNK else t
 
 def clubs_from_options(opts):
     """opts = [(team_id, team_name, division)] -> sorted list of {club, teams}"""

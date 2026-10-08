@@ -32,7 +32,7 @@ DIV_WORKERS = 4      # division schedule pages fetched in parallel per event
 MAX_DIVISIONS = 16   # divisions per event; enough to see which fields and venues are in use
 LINK_SLEEP = 0.25    # pause between short-link fetches
 EARLIEST = datetime.date(2014, 1, 1)   # Tourney Machine short links start ~2016; earlier dates are typos (e.g. year 2000)
-JUNK_NAME = re.compile(r"\b(test|testing|fake|mock|demo|sample|dummy)\b", re.I)
+JUNK_NAME = re.compile(r"\b(test|testing|fake|mock|demo|sample|dummy|delete|do not use|placeholder)\b", re.I)
 
 class IngestRejected(RuntimeError):
     """The ingest endpoint refused a batch. The shard stops instead of crawling for hours into nothing."""
