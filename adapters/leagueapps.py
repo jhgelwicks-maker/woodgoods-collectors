@@ -195,22 +195,70 @@ class AlohaCollector(LeagueAppsCollector):
 
 
 class AllianceCollector(LeagueAppsCollector):
-    """Alliance Lacrosse League. Low yield - one fall event."""
+    """Alliance Lacrosse League ("The League"), on the 3Step Sports platform like NXT.
+
+    The register index and /page/events now load programs with JavaScript (and /page/events
+    was down on 2026-10-08), so neither lists events to a fetcher. Two sources that do:
+      - EventID links on the home page -> parsed with the normal LeagueApps event parser
+      - the league's page on its video partner, nlvproductions.com, which lists every event
+        (split into Saturday/Sunday/Both Days packages; merged back into one event here)."""
     slug = "alliance"
     organizer = "Alliance"
-    host = "https://register.thealliancelacrosseleague.com"
+    host = "https://www.thealliancelacrosseleague.com"
+    nlv_url = "https://nlvproductions.com/events/host/alliance-lacrosse-league"
     tier = 2
     default_gender = "boys"
     known_ids: list[int] = []
 
     def collect(self):
-        """No stable IDs captured yet; fall back to the register index."""
         out = []
         try:
-            soup = self.soup(f"{self.host}/site/register/")
+            home = self.soup(f"{self.host}/page/home")
+            ids = sorted({int(x) for x in re.findall(r"EventID=(\d+)", str(home))} | set(self.known_ids))
         except Exception as e:  # noqa: BLE001
-            self.errors.append(f"{self.slug}: {e}")
-            return out
+            self.errors.append(f"{self.slug} home: {e}"); ids = list(self.known_ids)
+        for eid in ids:
+            try:
+                ev = self.parse_event(eid)
+                if ev: out.append(ev)
+            except FetchError:
+                continue
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{self.slug}#{eid}: {e}")
+        try:
+            out += self.collect_nlv(out)
+        except Exception as e:  # noqa: BLE001
+            self.errors.append(f"{self.slug} nlv: {e}")
+        return out
+
+    def collect_nlv(self, have):
+        """One table row per package: 'b' = name, then date and location cells. Upcoming events only."""
+        import datetime
+        merged = {}
+        for tr in self.soup(self.nlv_url).select("tr"):
+            tds = tr.find_all("td")
+            if len(tds) < 4 or not tds[1].find("b"): continue
+            title = self.txt(tds[1].find("b")).strip()
+            start, end = parse_date_range(self.txt(tds[2]).strip())
+            if not start: continue
+            end = end or start
+            if end < datetime.date.today(): continue
+            name = re.sub(r"\s*-?\s*\b(Saturday Only|Sunday Only|Both Days)$", "", title, flags=re.I)
+            name = re.sub(r"^20\d{2}\s+", "", name).strip(" -")
+            d = merged.setdefault((start.year, name.lower()), {"name": name, "start": start, "end": end,
+                                                              "raw": self.txt(tds[2]).strip(), "where": self.txt(tds[3]).strip()})
+            d["start"] = min(d["start"], start); d["end"] = max(d["end"], end)
+        seen = {(e.name.lower(), e.start_date) for e in have}
+        out = []
+        for d in merged.values():
+            if (d["name"].lower(), d["start"]) in seen: continue
+            states = re.findall(r"\b([A-Z]{2})\b", d["where"])
+            out.append(Event(
+                organizer=self.organizer, name=d["name"], start_date=d["start"], end_date=d["end"], raw_date=d["raw"],
+                venue=d["where"] if len(states) != 1 else None, city=None, state=states[0] if len(states) == 1 else None,
+                gender="boys", event_type="tournament", source_url=self.nlv_url,
+            ))
+        return out
         text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
         for m in DATE_RE.finditer(text):
             start, end = parse_date_range(m.group(1))
