@@ -81,6 +81,19 @@ collectors whose required key is missing.
 - `weekly.yml`: Mon 06:00 UTC, matrix over the five sources, fail-fast off, 170-min timeout each.
 - `backfill.yml`: manual. Inputs start/end/shard_size. Plan job builds the matrix newest-first.
 
+## Mac-side setup (outside the repo, private)
+
+- `~/WoodGoodsAI/.ingest.env` (INGEST_URL, INGEST_KEY) and `~/WoodGoodsAI/.export.env` (EXPORT_KEY). Never commit.
+  GitHub's INGEST_KEY secret and Lovable's must match the Mac's. EXPORT_KEY exists only in Lovable and on the Mac.
+- Backfill now runs on the Mac: `python -m collectors.backfill_local START END --parallel 4`. Rows are written to
+  `~/WoodGoodsAI/backup/backfill/R<a>-<b>.jsonl` before posting; `.done` markers make reruns resume;
+  `python -m collectors.replay_history <files>` resends. Skips unfinished events and junk (pre-2014 dates, test/mock names).
+  2026-10-08: R68000–185500 done, 101,717 history rows, 0 errors.
+- Database backup: `tools/backup_db.py` pulls every table from the app's read-only `GET /api/public/export`
+  (header `x-export-key`, 1,000 rows per page) into `~/WoodGoodsAI/backup/db/current` (+ `previous`).
+  Runs Mondays 09:00 via `~/Library/LaunchAgents/com.woodgoods.dbbackup.plist`, and after every local backfill.
+  Log: `~/WoodGoodsAI/backup/logs/db-backup.log`.
+
 ## Decisions already made (don't relitigate without reason)
 
 - **Precedent over registrations.** For Tourney Machine events, current team_count is noise until
