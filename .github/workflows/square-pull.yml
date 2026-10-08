@@ -1,0 +1,43 @@
+name: square-sales-pull
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Start date (YYYY-MM-DD)"
+        default: "2018-01-01"
+      until:
+        description: "End date, exclusive (YYYY-MM-DD)"
+        default: "2026-12-31"
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Pull Square payments and line items
+        env:
+          SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
+        run: |
+          python -m collectors.square_sales \
+            --since "${{ github.event.inputs.since }}" \
+            --until "${{ github.event.inputs.until }}" \
+            --csv square_sales.csv
+          python - <<'EOF'
+          import csv, collections
+          rows = list(csv.DictReader(open("square_sales.csv")))
+          by = collections.defaultdict(lambda: [0, 0.0])
+          for r in rows:
+              k = (r["location_name"], r["local_date"])
+              by[k][0] += 1; by[k][1] += int(r["line_total_cents"] or 0) / 100
+          print(f"{len(rows)} line items across {len(by)} location-days")
+          for (loc, d), (n, amt) in sorted(by.items(), key=lambda x: x[0][1])[-40:]:
+              print(f"{d}  {loc:<20} {n:>4} items  ${amt:>9,.0f}")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: square-sales
+          path: square_sales.csv
+          retention-days: 7
