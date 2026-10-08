@@ -30,6 +30,19 @@ def reparse_state(r):
     r["event_fingerprint"] = common.fingerprint(r.get("name"), r.get("sport"), st)
     return True
 
+def reclean_clubs(r):
+    """Re-run the (improved) club-name cleaning on the saved club roots and merge duplicates. Returns True if changed."""
+    clubs = r.get("clubs")
+    if not clubs: return False
+    merged = {}
+    for c in clubs:
+        root = common.club_from_team(c.get("club"))
+        if root: merged[root] = merged.get(root, 0) + (c.get("teams") or 0)
+    new = [{"club": k, "teams": v} for k, v in sorted(merged.items(), key=lambda kv: -kv[1])] or None
+    if new == clubs: return False
+    r["clubs"] = new; r["club_count"] = len(new) if new else None
+    return True
+
 def recrawl(n):
     try:
         rows, _ = bf.collect(n, n + 1)
@@ -39,10 +52,17 @@ def recrawl(n):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--parallel", type=int, default=4)
+    ap.add_argument("--reclean", action="store_true", help="only re-clean club names and drop junk-named rows; no re-crawl")
     o = ap.parse_args()
     files = sorted(glob.glob(os.path.join(BACKUP_DIR, "R*.jsonl")))
     shards = {f: [json.loads(l) for l in open(f) if l.strip()] for f in files}
-    need_crawl = [r["short_id"] for rows in shards.values() for r in rows if truncated(r)]
+    need_crawl = [] if o.reclean else [r["short_id"] for rows in shards.values() for r in rows if truncated(r)]
+    junk = 0
+    if o.reclean:
+        for f in shards:
+            keep = [r for r in shards[f] if not bf.JUNK_NAME.search(r.get("name") or "")]
+            junk += len(shards[f]) - len(keep); shards[f] = keep
+        log.info("%d junk-named rows dropped from the files (delete them in the app separately)", junk)
     log.info("%d files, %d rows; %d events to re-crawl", len(files), sum(map(len, shards.values())), len(need_crawl))
     fixed = {}
     if need_crawl and not o.dry_run:
@@ -60,6 +80,9 @@ def main():
                 rows[i] = fixed[r["short_id"]]; changed.append(rows[i]); dirty = True; continue
             if reparse_state(r):
                 state_fixed += 1; changed.append(r); dirty = True
+            elif o.reclean and reclean_clubs(r):
+                changed.append(r); dirty = True
+        if junk and not o.dry_run: dirty = True
         if dirty and not o.dry_run:
             tmp = f + ".tmp"
             with open(tmp, "w") as out:
@@ -71,7 +94,8 @@ def main():
     for i in range(0, len(changed), 150):
         db._post({"source": "tourneymachine-history", "history": changed[i:i+150]})
     db.log_run("tourneymachine-history repair", len(changed), len(changed), len(need_crawl) - len(fixed), started,
-               note=f"shard backfill repair: {len(fixed)} venue names re-crawled, {state_fixed} states filled")
+               note=f"shard backfill repair: {len(fixed)} venue names re-crawled, {state_fixed} states filled, "
+                    f"{len(changed) - len(fixed) - state_fixed} club lists re-cleaned")
     log.info("sent %d repaired rows", len(changed))
 
 if __name__ == "__main__":
