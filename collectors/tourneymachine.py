@@ -168,10 +168,9 @@ def collect_history():
             ev = bf.parse_event(page.text)
             ev["sport"] = ev["sport"] or r.get("icon")
             ev["name"] = ev["name"] or r.get("title")
-            per_site, games, sched_teams, fields = ({}, {}, 0, {})
+            per_site, games, sched_teams, fields, profile = ({}, {}, 0, {}, None)
             if ev["div_ids"]:
-                per_site, games, sched_teams, fields = bf.site_counts(ev["tid"], ev["div_ids"][:40], ev["venues"])
-            profile = getattr(bf.site_counts, "last_schedule", None) if ev["div_ids"] else None
+                per_site, games, sched_teams, fields, profile = bf.site_counts(ev["tid"], ev["div_ids"][:bf.MAX_DIVISIONS], ev["venues"])
             row = bf.build_row(0, ev, per_site, games, sched_teams, fields, profile)
             row["short_id"] = None
             row["organizer_name"] = r.get("customer"); row["organizer_source"] = "listed"

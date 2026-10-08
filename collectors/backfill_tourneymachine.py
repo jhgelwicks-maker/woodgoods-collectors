@@ -14,7 +14,14 @@ UA = {"user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit
 BASE = "https://www.tourneymachine.com"
 TRACKED = {"lacrosse", "soccer", "baseball", "softball", "volleyball", "hockey", "field hockey", "football", "basketball"}
 OPT = re.compile(r'<option value="(h[0-9a-f]{31})"[^>]*>([^<]*)\(Division: (.*?)\)</option>')
-COMPLEX = re.compile(r"(complex\d+)\.(\w+)\s*=\s*'([^']*)'")
+COMPLEX = re.compile(r"(complex\d+)\.(\w+)\s*=\s*'((?:[^'\\]|\\.)*)'")   # JS string; \' inside is an escaped apostrophe
+def _js(s): return re.sub(r"\\(.)", r"\1", s or "")
+CITY_ST = re.compile(r"([A-Za-z][A-Za-z .'\-]{1,40}?)\s*,+\s*([A-Za-z]{2})\b[\s,]*(?:\d{5}(?:-\d{4})?)?\s*$")
+def addr_city_state(addr):
+    """'701 Allen Ave, Centralia,, WA 98531' -> 'Centralia, WA'; None when there is no City, ST."""
+    if not addr: return None
+    m = CITY_ST.search(re.sub(r"\s+", " ", addr).strip(" ,"))
+    return f"{m.group(1).strip(' ,').title() if m.group(1).isupper() or m.group(1).islower() else m.group(1).strip(' ,')}, {m.group(2).upper()}" if m else None
 ADDR = re.compile(r'maps\?q=([^"]+)"[^>]*>\s*<address>(.*?)</address>', re.S)
 GAME = re.compile(r"<tr class='schedule_row[^']*'[^>]*data-gameid[^>]*>(.*?)</tr>", re.S)
 GAME_FULL = re.compile(r"<tr class='schedule_row (date_\d{8})[^']*'[^>]*data-gameid[^>]*>(.*?)</tr>", re.S)
@@ -60,7 +67,7 @@ def parse_event(h):
     opts = OPT.findall(h); teams = {o[0] for o in opts}; divs = collections.Counter(o[2] for o in opts)
     acc = {}
     seg = h[h.index("loadLocations"):] if "loadLocations" in h else ""
-    for m in COMPLEX.finditer(seg[:8000]): acc.setdefault(m.group(1), {})[m.group(2)] = m.group(3)
+    for m in COMPLEX.finditer(seg[:8000]): acc.setdefault(m.group(1), {})[m.group(2)] = _js(m.group(3))
     # address blocks appear in venue order on the page; pair them with complexes by order
     addr_list = [re.sub(r"\s+", " ", html.unescape(re.sub(r"<br\s*/?>", ", ", a))).strip(" ,") for _, a in ADDR.findall(h)]
     venues = []
@@ -110,8 +117,7 @@ def site_counts(tid, div_ids, venues):
                 except ValueError: pass
             for tm in TEAMID.findall(row): team_sites[tm].add(site); div_sites[dv].add(site)
     per_site = collections.Counter(s for sites in team_sites.values() for s in sites)
-    site_counts.last_schedule = schedule_profile(game_log)
-    return per_site, games, len(team_sites), {k: sorted(v) for k, v in fields.items()}
+    return per_site, games, len(team_sites), {k: sorted(v) for k, v in fields.items()}, schedule_profile(game_log)
 
 def _hm(m): return f"{m // 60:02d}:{m % 60:02d}"
 
@@ -181,10 +187,8 @@ def build_row(n, ev, per_site, games, sched_teams, fields=None, profile=None):
     fields_used = sum(len(x) for x in fields.values()) or None
     city_states = []
     for v in ev["venues"]:
-        m = re.search(r",\s*([^,]+),\s*([A-Z]{2})\b", v.get("address") or "")
-        if m:
-            cs = f"{m.group(1).strip()}, {m.group(2)}"
-            if cs not in city_states: city_states.append(cs)
+        cs = addr_city_state(v.get("address"))
+        if cs and cs not in city_states: city_states.append(cs)
     sched_avg = (round(sum(x for x in per_site.values()) / len(per_site), 1) if per_site else None)
     return {"source": "tourneymachine", "source_event_id": ev["tid"], "short_id": n, "name": ev["name"], "sport": ev["sport"],
             "start_date": ev["start"], "end_date": ev["end"], "city_states": city_states,
@@ -239,10 +243,9 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
             collect.junk += 1; continue         # mistyped year or an organizer's test event
         if (ev["end"] or ev["start"]) >= datetime.date.today():
             collect.upcoming += 1; continue     # not played yet: no final team count. The weekly job archives it once it ends
-        per_site, games, sched_teams, fields = ({}, {}, 0, {})
+        per_site, games, sched_teams, fields, profile = ({}, {}, 0, {}, None)
         if with_sites and ev["div_ids"]:
-            per_site, games, sched_teams, fields = site_counts(ev["tid"], ev["div_ids"][:MAX_DIVISIONS], ev["venues"])
-        profile = getattr(site_counts, "last_schedule", None) if ev["div_ids"] else None
+            per_site, games, sched_teams, fields, profile = site_counts(ev["tid"], ev["div_ids"][:MAX_DIVISIONS], ev["venues"])
         row = build_row(n, ev, per_site, games, sched_teams, fields, profile)
         _, lo, hi, gender = common.parse_age_groups(f"{ev['divisions']} {ev['name']}", ev["start"].year if ev["start"] else None)
         row["age_groups"] = f"{lo}" if lo and lo == hi else (f"{lo}\u2013{hi}" if lo else None)
