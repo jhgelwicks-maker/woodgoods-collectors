@@ -56,6 +56,9 @@ def main():
         codes = list(ex.map(lambda s: run_shard(s[0], s[1], env), shards))
     failed = sum(1 for c in codes if c)
     print(f"finished: {len(shards) - failed} ok, {failed} failed", flush=True)
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.exists(os.path.join(HOME, ".export.env")):     # refresh the Mac copy of the app's database
+        subprocess.call([sys.executable, os.path.join(repo, "tools", "backup_db.py")])
     sys.exit(1 if failed else 0)
 
 if __name__ == "__main__":
