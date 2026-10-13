@@ -30,40 +30,51 @@ ENV_FILE = os.path.join(HOME, ".anthropic.env")
 PRICE = {  # $ per 1M tokens: input, output  (+ $10 per 1,000 web searches)
     "claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50)}
 
+def _s(desc=None):
+    d = {"type": "string"}
+    if desc: d["description"] = desc
+    return d
+
+# The API allows at most 16 nullable/union-typed fields per schema, so every field is a plain string
+# and "" means unknown. clean() turns "" back into None when saving.
+NEXT = {"type": "object", "additionalProperties": False,
+        "properties": {"start_date": _s("YYYY-MM-DD or empty"), "end_date": _s(), "venue": _s(), "city": _s(), "state": _s(),
+                       "status": {"type": "string", "enum": ["confirmed", "tentative", "not_announced"]}, "source_url": _s()},
+        "required": ["start_date", "end_date", "venue", "city", "state", "status", "source_url"]}
+CONTACT = {"type": "object", "additionalProperties": False,
+           "properties": {"name": _s(), "role": _s(), "email": _s(), "phone": _s(),
+                          "kind": {"type": "string", "enum": ["vendor", "director", "general", "other"]}, "source_url": _s()},
+           "required": ["name", "role", "email", "phone", "kind", "source_url"]}
+OTHER = {"type": "object", "additionalProperties": False,
+         "properties": {"name": _s(), "start_date": _s("YYYY-MM-DD or empty"), "end_date": _s(), "venue": _s(), "city": _s(), "state": _s(),
+                        "sport": _s(), "gender": _s("boys, girls, both or empty"), "url": _s()},
+         "required": ["name", "start_date", "end_date", "venue", "city", "state", "sport", "gender", "url"]}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
-        "organizer_name": {"type": ["string", "null"], "description": "The company/club that runs this event"},
-        "organizer_website": {"type": ["string", "null"], "description": "Homepage URL of the organizer"},
+        "organizer_name": _s("The company/club that runs this event; empty if not found"),
+        "organizer_website": _s("Homepage URL of the organizer; empty if not found"),
         "confidence": {"type": "number", "description": "0-1: how sure you are this organizer runs THIS event"},
-        "evidence": {"type": "string", "description": "One sentence: what proved the organizer runs this event"},
-        "event_page_url": {"type": ["string", "null"], "description": "The organizer's own page for this specific event"},
-        "next_occurrence": {
-            "type": ["object", "null"], "additionalProperties": False,
-            "properties": {"start_date": {"type": ["string", "null"]}, "end_date": {"type": ["string", "null"]},
-                           "venue": {"type": ["string", "null"]}, "city": {"type": ["string", "null"]}, "state": {"type": ["string", "null"]},
-                           "status": {"type": "string", "enum": ["confirmed", "tentative", "not_announced"]},
-                           "source_url": {"type": ["string", "null"]}},
-            "required": ["start_date", "end_date", "venue", "city", "state", "status", "source_url"]},
-        "contacts": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False,
-            "properties": {"name": {"type": ["string", "null"]}, "role": {"type": ["string", "null"]},
-                           "email": {"type": ["string", "null"]}, "phone": {"type": ["string", "null"]},
-                           "kind": {"type": "string", "enum": ["vendor", "director", "general", "other"]},
-                           "source_url": {"type": ["string", "null"]}},
-            "required": ["name", "role", "email", "phone", "kind", "source_url"]}},
-        "vendor_info": {"type": ["string", "null"], "description": "Anything about vendors/sponsors/booths: fees, application link, deadline"},
-        "other_events": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False,
-            "properties": {"name": {"type": "string"}, "start_date": {"type": ["string", "null"]}, "end_date": {"type": ["string", "null"]},
-                           "venue": {"type": ["string", "null"]}, "city": {"type": ["string", "null"]}, "state": {"type": ["string", "null"]},
-                           "sport": {"type": ["string", "null"]}, "gender": {"type": ["string", "null"]}, "url": {"type": ["string", "null"]}},
-            "required": ["name", "start_date", "end_date", "venue", "city", "state", "sport", "gender", "url"]}},
-        "notes": {"type": "string"},
+        "evidence": _s("One sentence: what proved the organizer runs this event"),
+        "event_page_url": _s("The organizer's own page for this specific event"),
+        "next_occurrence": NEXT,
+        "contacts": {"type": "array", "items": CONTACT},
+        "vendor_info": _s("Anything about vendors/sponsors/booths: fees, application link, deadline"),
+        "other_events": {"type": "array", "items": OTHER},
+        "notes": _s(),
     },
     "required": ["organizer_name", "organizer_website", "confidence", "evidence", "event_page_url", "next_occurrence",
                  "contacts", "vendor_info", "other_events", "notes"],
 }
+
+def clean(x):
+    """'' -> None, recursively; an all-empty next_occurrence that was never announced -> None."""
+    if isinstance(x, dict):
+        d = {k: clean(v) for k, v in x.items()}
+        if set(d) == set(NEXT["properties"]) and d.get("status") == "not_announced" and not d.get("start_date"): return None
+        return d
+    if isinstance(x, list): return [clean(v) for v in x]
+    return None if x == "" else x
 
 SYSTEM = """You research youth sports tournament organizers for a company that sells custom hats from a vendor booth at tournaments.
 Given one recurring tournament (name variants, state, venues, dates and team counts from past years), find out who runs it and read their website.
@@ -170,7 +181,7 @@ def research(client, model, s, max_continuations=4):
             return {"error": f"refusal: {getattr(resp.stop_details, 'explanation', '')}"}, usage
         text = next((b.text for b in resp.content if b.type == "text"), None)
         if not text: return {"error": f"no text ({resp.stop_reason})"}, usage
-        try: return json.loads(text), usage
+        try: return clean(json.loads(text)), usage
         except json.JSONDecodeError: return {"error": "bad json", "raw": text[:500]}, usage
     return {"error": "still paused after continuations"}, usage
 
@@ -213,6 +224,7 @@ def main():
     series = [s for s in build_series(o.sport) if s["max_teams"] >= o.min_teams]
     path = os.path.join(OUT, "series.jsonl")
     done = list(iter_jsonl(path)) if os.path.exists(path) else []
+    done = [d for d in done if not (d.get("result") or {}).get("error")]   # failed ones are retried
     done_fp = {d["fingerprint"] for d in done}
     todo = [s for s in series if s["fingerprint"] not in done_fp]
     if o.limit: todo = todo[:o.limit]
