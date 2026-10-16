@@ -1,0 +1,24 @@
+correct:found_verified       2021 Roswell Lacrosse Tournament       -> Roswell Youth Lacrosse Assoc https://patch.com/             | truth: Roswell Youth lacrosse Association
+correct:found_verified       Robin Hood Skirmish SW 2024            -> Robin Hood Skirmish          https://robinhoodskirmish.com/ | truth: Robin Hood Skirmish
+not_found                    SE Fall League                         -> None                                                        | truth: Southern Edge Tournaments
+correct:found_verified       2024 North Coast Lacrosse Championship -> Big Dog Lacrosse             https://bigdoglacrosse.com/    | truth: Big Dog Lacrosse
+not_found                    LIJLL FALL 2024                        -> None                                                        | truth: Hoop Dreams
+not_found                    Rivalry Challenge 2025                 -> None                                                        | truth: Rivalry Challenge
+correct:found_verified       LFA Midwest Fall Championships 2025    -> Lou Fusz Athletic (LFA Lacro https://loufuszathletic.com/   | truth: LFA
+correct:found_verified       2025 Appalachian Sixes Lacrosse Festiv -> Greater Garrett County Youth https://appalachiansixes.com/  | truth: Greater Garrett County Youth Lacrosse Club
+correct:found_verified       2025 Gobble Gobble Games               -> Monkey Up Tournaments (MU To https://monkeyuptournaments.co | truth: Monkey Up Tournaments, LLC
+correct:found_verified       2025 Harvest Classic                   -> MU Tournaments (Monkey Up To https://monkeyuptournaments.co | truth: Monkey Up Tournaments, LLC
+WRONG:found_verified         Southern California Box League 2025    -> Trabuco Hills Lax (Trabuco H https://trabucohillslax.com/   | truth: OC Rebels Lacrosse
+not_found                    Liverpool Laxtoberfest 2025            -> None                                                        | truth: Liverpool Girls Lacrosse
+correct:found_verified       The St. James 2025-2026 Winter Lacross -> The St. James                https://thestjames.com/        | truth: The St. James Sports
+correct:found_verified       2025 Chris Barnes Seaway Classic       -> Webster Women's Lacrosse Clu https://wwlc.org/              | truth: Webster Womens Lacrosse Club
+correct:found_verified       APEX GIRLS TRI-STATE INVITE            -> Apex Lacrosse Events         https://apexgirlslacrosseevent | truth: APEX Lacrosse Events
+correct:found_verified       APEX FALL OPENER 2025                  -> Apex Lacrosse Events         https://apexlacrosseevents.com | truth: APEX Lacrosse Events
+correct:found_verified       AYL Fall Faceoff                       -> Amity Youth Lacrosse (AYL)   https://amityyouthlacrosse.org | truth: Amity Youth Lacrosse
+correct:found_verified       Love 2 Lax                             -> Laxachusetts Girls Lacrosse  https://girls.laxachusetts.com | truth: Laxachusetts Girls
+correct:found_verified       2025 Fall Elite Series Playday         -> Carolina Lacrosse Tournament https://cltournaments.com/     | truth: Carolina Lacrosse Tournaments
+not_found                    ATX 2025 Zebra Open                    -> None                                                        | truth: ATX Zebra Open
+
+ {'correct:found_verified': 14, 'not_found': 5, 'WRONG:found_verified': 1}   n=20
+verified-but-wrong: 1   (must be 0)
+usage: 1,582,881 input tokens, 26,696 output tokens, 54 searches = $3.97 total, $0.199 per event
