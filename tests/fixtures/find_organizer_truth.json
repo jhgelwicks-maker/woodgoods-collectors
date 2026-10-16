@@ -1,0 +1,1316 @@
+[
+ {
+  "city_states": [
+   "Roswell, GA"
+  ],
+  "cur_date": "2028-05-09",
+  "cur_name": "2020 Roswell Lacrosse Tournament",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20191230161656204016d508fe57c43",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202101091448573669f12f66698f149/desktop%20logo.png"
+   },
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h202101091448573669f12f66698f149/2021%20RYLI_%20Boys%20Rules.pdf"
+   },
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h202101091448573669f12f66698f149/2021%20RYLI_Girls%20Rules.pdf"
+   },
+   {
+    "kind": "document",
+    "url": "https://assets.tourneymachine.com/Tournament/h202101091448573669f12f66698f149/RYLI%202021%20Welcome%20Letter.pdf"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h202101091448573669f12f66698f149/RYLI%20Park%20Map%202021.pdf"
+   }
+  ],
+  "end": "2021-05-09",
+  "fingerprint": "lacrosse|GA|roswell",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202101091448573669f12f66698f149",
+  "name": "2021 Roswell Lacrosse Tournament",
+  "sport": "lacrosse",
+  "start": "2021-05-08",
+  "state": "GA",
+  "teams": 64,
+  "truth": "Roswell Youth lacrosse Association",
+  "venues": [
+   {
+    "address": "10495 Woodstock Rd, Roswell, GA 30075",
+    "lat": "34.038495300000",
+    "long": "-84.363958600000",
+    "venue_name": "Roswell Area Park"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Mesa, AZ"
+  ],
+  "cur_date": "2027-01-30",
+  "cur_name": "Robin Hood Skirmish SW 2027",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2026072202213020536de3490104044",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202305092301228548e1e41e2c43644/140logo.png"
+   }
+  ],
+  "end": "2024-02-04",
+  "fingerprint": "lacrosse|AZ|robin hood skirmish sw",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202305092301228548e1e41e2c43644",
+  "name": "Robin Hood Skirmish SW 2024",
+  "sport": "lacrosse",
+  "start": "2024-02-03",
+  "state": "AZ",
+  "teams": 118,
+  "truth": "Robin Hood Skirmish",
+  "venues": [
+   {
+    "address": "6321 S Ellsworth Rd, Mesa, AZ 85212",
+    "lat": "33.300733500000",
+    "long": "-111.634858300000",
+    "venue_name": "Legacy Park"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Canton, GA",
+   "Woodstock, GA",
+   "Powder Springs, GA"
+  ],
+  "cur_date": "2026-09-13",
+  "cur_name": "SE FALL LEAGUE",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202608281032063204327f99258594d",
+  "documents": null,
+  "end": "2023-10-29",
+  "fingerprint": "lacrosse|GA|se fall league",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2023082514054194848f8008250b04b",
+  "name": "SE Fall League",
+  "sport": "lacrosse",
+  "start": "2023-09-10",
+  "state": "GA",
+  "teams": 56,
+  "truth": "Southern Edge Tournaments",
+  "venues": [
+   {
+    "address": "7345 Cumming Hwy, Canton, GA 30115",
+    "lat": "34.250807900000",
+    "long": "-84.371226500000",
+    "venue_name": "Veterans Park"
+   },
+   {
+    "address": "400 Arnold Mill Road, Woodstock, GA 30188",
+    "lat": "34.115819100000",
+    "long": "-84.480752400000",
+    "venue_name": "River Ridge High School"
+   },
+   {
+    "address": "4845 Dallas Hwy, Powder Springs, GA 30127",
+    "lat": "33.943646400000",
+    "long": "-84.692118300000",
+    "venue_name": "Lost Mtn Park"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Canton, OH"
+  ],
+  "cur_date": "2027-05-14",
+  "cur_name": "2027 North Coast Championships",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202606161303129559e19f11858f847",
+  "documents": [
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h20231203181524755ab5e6b28982841/North-Coast-Rule-Sheets-2024.pdf"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h20231203181524755ab5e6b28982841/HoF-Field-Map_Small-Ball.pdf"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h20231203181524755ab5e6b28982841/HoF-Field-Map_Full-Field.pdf"
+   }
+  ],
+  "end": "2024-05-19",
+  "fingerprint": "lacrosse|OH|north coast championships",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20231203181524755ab5e6b28982841",
+  "name": "2024 North Coast Lacrosse Championships",
+  "sport": "lacrosse",
+  "start": "2024-05-17",
+  "state": "OH",
+  "teams": 155,
+  "truth": "Big Dog Lacrosse",
+  "venues": [
+   {
+    "address": "2442 17th St NW, Canton, OH 44708",
+    "lat": "40.817302100000",
+    "long": "-81.398129300000",
+    "venue_name": "HoF"
+   },
+   {
+    "address": "2442 17th St NW, Canton, OH 44708",
+    "lat": "40.817302100000",
+    "long": "-81.398129300000",
+    "venue_name": "HoF"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "HUNTINGTON STATION, NY",
+   "Uniondale, NY",
+   "Cold Spring Harbor, NY"
+  ],
+  "cur_date": "2026-09-28",
+  "cur_name": "LIJLL Fall 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260831121034816477188b4d9c047",
+  "documents": null,
+  "end": "2024-11-07",
+  "fingerprint": "lacrosse|NY|lijll fall",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20240809134759573b12e34f586ae48",
+  "name": "LIJLL FALL 2024",
+  "sport": "lacrosse",
+  "start": "2024-09-30",
+  "state": "NY",
+  "teams": 10,
+  "truth": "Hoop Dreams",
+  "venues": [
+   {
+    "address": "East 5th St, HUNTINGTON STATION, NY 11746",
+    "lat": "40.852867400000",
+    "long": "-73.400534100000",
+    "venue_name": "Manor Field Park"
+   },
+   {
+    "address": "1 Charles Lindbergh Blvd, Uniondale, NY 11553",
+    "lat": "40.727070600000",
+    "long": "-73.596215700000",
+    "venue_name": "Mitchell Field Stadium"
+   },
+   {
+    "address": "82 Turkey Lane, Cold Spring Harbor, NY 11724",
+    "lat": "40.866261800000",
+    "long": "-73.456508100000",
+    "venue_name": "Cold Sp Harbor HS"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Annapolis, MD"
+  ],
+  "cur_date": "2026-11-07",
+  "cur_name": "Rivalry Challenge 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202512081645068741a8fd41cd82a44",
+  "documents": null,
+  "end": "2025-11-09",
+  "fingerprint": "lacrosse|MD|rivalry challenge",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20241126170613569d89e73c70d0c47",
+  "name": "Rivalry Challenge 2025",
+  "sport": "lacrosse",
+  "start": "2025-11-08",
+  "state": "MD",
+  "teams": 141,
+  "truth": "Rivalry Challenge",
+  "venues": [
+   {
+    "address": "Brownson Rd., Naval Academyy, Annapolis, MD 21402",
+    "lat": "38.981570300000",
+    "long": "-76.478769200000",
+    "venue_name": "Naval Academy - Farragut"
+   },
+   {
+    "address": "Forrest Sherman Field, Naval Academy, Annapolis, MD 21402",
+    "lat": "38.988835558422",
+    "long": "-76.488876342773",
+    "venue_name": "Hospital Point"
+   },
+   {
+    "address": "Holloway Rd., Naval Academy, Annapolis, MD 21402",
+    "lat": "38.985062400000",
+    "long": "-76.484112000000",
+    "venue_name": "Naval Academy - Dewey"
+   },
+   {
+    "address": "566 Brownson Rd., Annapolis, MD 21402",
+    "lat": "38.981570300000",
+    "long": "-76.478769200000",
+    "venue_name": "Naval Academy - Rip Miller Turf 15"
+   },
+   {
+    "address": "550 Taylor Ave., Annapolis, MD 21401",
+    "lat": "38.985677300000",
+    "long": "-76.508130300000",
+    "venue_name": "Navy Marine Corps Memorial Stadium 18"
+   },
+   {
+    "address": "675 Decatur Rd, Annapolis, MD 21402",
+    "lat": "38.982982800000",
+    "long": "-76.491075300000",
+    "venue_name": "Naval Academy -Softball 17"
+   },
+   {
+    "address": "King George St, Annapolis, MD 21402",
+    "lat": "38.987651383949",
+    "long": "-76.496086120605",
+    "venue_name": "Naval Academy -Baseball 16"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Saint Louis, MO"
+  ],
+  "cur_date": "2026-11-14",
+  "cur_name": "LFA Midwest Fall Championships 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260701192658053bafac81dff764e",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250310171107808f431f44da2864b/lax%20fall%20championships%20logo%202025%20140.png"
+   }
+  ],
+  "end": "2025-11-16",
+  "fingerprint": "lacrosse|MO|lfa midwest fall championships",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250310171107808f431f44da2864b",
+  "name": "LFA Midwest Fall Championships 2025",
+  "sport": "lacrosse",
+  "start": "2025-11-15",
+  "state": "MO",
+  "teams": 53,
+  "truth": "LFA",
+  "venues": [
+   {
+    "address": "2155 Creve Coeur Mill Rd., Saint Louis, MO 63146",
+    "lat": "38.700395400000",
+    "long": "-90.500978100000",
+    "venue_name": "Lou Fusz Soccer Complex"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Cumberland, MD"
+  ],
+  "cur_date": "2026-10-11",
+  "cur_name": "2026 Appalachian Sixes Lacrosse Festival",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260502230940980c16ae1ccf9c54a",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250409190415502649dea4402a544/thumbnail_ASLF_140x140.png"
+   }
+  ],
+  "end": "2025-10-12",
+  "fingerprint": "lacrosse|MD|appalachian sixes",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250409190415502649dea4402a544",
+  "name": "2025 Appalachian Sixes Lacrosse Festival",
+  "sport": "lacrosse",
+  "start": "2025-10-12",
+  "state": "MD",
+  "teams": 14,
+  "truth": "Greater Garrett County Youth Lacrosse Club",
+  "venues": [
+   {
+    "address": "500 Greenway Ave, Cumberland, MD 21502",
+    "lat": "39.644285800000",
+    "long": "-78.748049900000",
+    "venue_name": "Greenway Avenue Stadiam"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Emerson, GA"
+  ],
+  "cur_date": "2026-11-21",
+  "cur_name": "2026 Gobble Gobble Games",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260811162744992a3794297f3da4b",
+  "documents": null,
+  "end": "2025-11-23",
+  "fingerprint": "lacrosse|GA|gobble gobble games",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2025061417262322615e000a4c3104e",
+  "name": "2025 Gobble Gobble Games",
+  "sport": "lacrosse",
+  "start": "2025-11-22",
+  "state": "GA",
+  "teams": 66,
+  "truth": "Monkey Up Tournaments, LLC",
+  "venues": [
+   {
+    "address": "261 Stars Way, Emerson, GA 30121",
+    "lat": "34.117181900000",
+    "long": "-84.742632700000",
+    "venue_name": "Lake Point"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Hoover, AL"
+  ],
+  "cur_date": "2026-11-07",
+  "cur_name": "2026 Harvest Classic",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260811145312252630090e7a76649",
+  "documents": null,
+  "end": "2025-11-02",
+  "fingerprint": "lacrosse|AL|harvest",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250618022839515bc4727d4d7bd45",
+  "name": "2025 Harvest Classic",
+  "sport": "lacrosse",
+  "start": "2025-11-01",
+  "state": "AL",
+  "teams": 24,
+  "truth": "Monkey Up Tournaments, LLC",
+  "venues": [
+   {
+    "address": "100 Ben Chapman Drive, Hoover, AL 35244",
+    "lat": "33.338442300000",
+    "long": "-86.849483000000",
+    "venue_name": "Hoover Met Complex"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "San Juan Capistrano, CA",
+   "Irvine, CA"
+  ],
+  "cur_date": "2026-09-12",
+  "cur_name": "Southern California Box League 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260625164146773acb4499e77aa45",
+  "documents": null,
+  "end": "2025-10-25",
+  "fingerprint": "lacrosse|CA|southern california box league",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250623194720582e5a2796b4bf34f",
+  "name": "Southern California Box League 2025",
+  "sport": "lacrosse",
+  "start": "2025-09-06",
+  "state": "CA",
+  "teams": 28,
+  "truth": "OC Rebels Lacrosse",
+  "venues": [
+   {
+    "address": "3 Via Positiva, San Juan Capistrano, CA 92675",
+    "lat": "33.489684500000",
+    "long": "-117.677290000000",
+    "venue_name": "Victory Athletic Center"
+   },
+   {
+    "address": "3150 Barranca Pkwy, Irvine, CA 92606",
+    "lat": "33.690554900000",
+    "long": "-117.823266400000",
+    "venue_name": "Irvine Rinks"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Liverpool, NY"
+  ],
+  "cur_date": "2026-10-04",
+  "cur_name": "Liverpool Laxtoberfest 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202608131510218322ee334d93c944a",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h202507172006167124b90eb4f05cb45/IMG_0329.png"
+   }
+  ],
+  "end": "2025-10-05",
+  "fingerprint": "lacrosse|NY|liverpool laxtoberfest",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202507172006167124b90eb4f05cb45",
+  "name": "Liverpool Laxtoberfest 2025",
+  "sport": "lacrosse",
+  "start": "2025-10-05",
+  "state": "NY",
+  "teams": 47,
+  "truth": "Liverpool Girls Lacrosse",
+  "venues": [
+   {
+    "address": "4338 Wetzel Rd., Liverpool, NY 13090",
+    "lat": "43.148075500000",
+    "long": "-76.215791600000",
+    "venue_name": "_Liverpool Turf"
+   },
+   {
+    "address": "4338 Wetzel Rd, Liverpool, NY 13090",
+    "lat": "43.146980535737",
+    "long": "-76.215140819550",
+    "venue_name": "Liverpool Grass Fields"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Springfield, VA"
+  ],
+  "cur_date": "2026-12-05",
+  "cur_name": "The St. James 2026-2027 Winter Lacrosse League",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202609172007506223ceb179a5f3343",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250718001638512d64041b8ca7b42/WLL-140x140.png"
+   }
+  ],
+  "end": "2025-12-06",
+  "fingerprint": "lacrosse|VA|st james winter league",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250718001638512d64041b8ca7b42",
+  "name": "The St. James 2025-2026 Winter Lacrosse League",
+  "sport": "lacrosse",
+  "start": "2025-12-06",
+  "state": "VA",
+  "teams": 157,
+  "truth": "The St. James Sports",
+  "venues": [
+   {
+    "address": "6805 Industrial Rd., Springfield, VA 22151",
+    "lat": "38.798163800000",
+    "long": "-77.178902300000",
+    "venue_name": "The St. James Fieldhouse"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Webster, NY"
+  ],
+  "cur_date": "2026-09-27",
+  "cur_name": "2026 Chris Barnes Seaway Classic",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260723014725916db6a282ec57a47",
+  "documents": [
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250727024442627f9b585b58b674a/2025-Seaway-Field-Map.pdf"
+   },
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250727024442627f9b585b58b674a/Seaway-Classic-Rules-and-Regulations-2025.pdf"
+   }
+  ],
+  "end": "2025-09-21",
+  "fingerprint": "lacrosse|NY|chris barnes seaway",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250727024442627f9b585b58b674a",
+  "name": "2025 Chris Barnes Seaway Classic",
+  "sport": "lacrosse",
+  "start": "2025-09-21",
+  "state": "NY",
+  "teams": 75,
+  "truth": "Webster Womens Lacrosse Club",
+  "venues": [
+   {
+    "address": "875 Ridge Road, Webster, NY 14580",
+    "lat": "43.202464000000",
+    "long": "-77.469767000000",
+    "venue_name": "Semmler Fields"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Tinton Falls, NJ"
+  ],
+  "cur_date": "2026-10-31",
+  "cur_name": "APEX TRI-STATE INVITE 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260825173450765c1e46147ad4c48",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250731164946482a64e62d2d9a748/11.png"
+   }
+  ],
+  "end": "2025-11-01",
+  "fingerprint": "lacrosse|NJ|apex tri state invite",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250731164946482a64e62d2d9a748",
+  "name": "APEX GIRLS TRI-STATE INVITE",
+  "sport": "lacrosse",
+  "start": "2025-11-01",
+  "state": "NJ",
+  "teams": 60,
+  "truth": "APEX Lacrosse Events",
+  "venues": [
+   {
+    "address": "1659 Wayside Rd,, Tinton Falls, NJ, NJ 07712",
+    "lat": "40.276020600000",
+    "long": "-74.084172300000",
+    "venue_name": "Capelli Sport Complex"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Tinton Falls, NJ"
+  ],
+  "cur_date": "2026-10-03",
+  "cur_name": "APEX FALL OPENER 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202608061407368908fb5cea8fe4f4b",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250731171900900854d6063043e44/2__4__large.png"
+   }
+  ],
+  "end": "2025-10-05",
+  "fingerprint": "lacrosse|NJ|apex fall opener",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250731171900900854d6063043e44",
+  "name": "APEX FALL OPENER 2025",
+  "sport": "lacrosse",
+  "start": "2025-10-04",
+  "state": "NJ",
+  "teams": 90,
+  "truth": "APEX Lacrosse Events",
+  "venues": [
+   {
+    "address": "1659 Wayside Rd,, Tinton Falls, NJ 07712",
+    "lat": "40.276020600000",
+    "long": "-74.084172300000",
+    "venue_name": "Capelli Sport Complex"
+   },
+   {
+    "address": "1 Norman J Field Way, Tinton Falls, NJ 07724",
+    "lat": "40.305301900000",
+    "long": "-74.090169000000",
+    "venue_name": "Monmouth High School"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Orange, CT"
+  ],
+  "cur_date": "2026-11-14",
+  "cur_name": "AYL 2026 Fall Faceoff",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202609291533570158ce584c5ad5d42",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250808013857082670a898b2c464f/Fall-Faceoff.png"
+   }
+  ],
+  "end": "2025-11-15",
+  "fingerprint": "lacrosse|CT|ayl fall faceoff",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250808013857082670a898b2c464f",
+  "name": "AYL Fall Faceoff",
+  "sport": "lacrosse",
+  "start": "2025-11-15",
+  "state": "CT",
+  "teams": 7,
+  "truth": "Amity Youth Lacrosse",
+  "venues": [
+   {
+    "address": "525 Orange Center Rd, Orange, CT 06477",
+    "lat": "41.273858000000",
+    "long": "-73.020740500000",
+    "venue_name": "High Plains Community Center"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Devens, MA"
+  ],
+  "cur_date": "2026-10-03",
+  "cur_name": "Love 2 Lax 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202609051910526403b1ea4e9521247",
+  "documents": [
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508111807451158a801e784e2049/2025-Love-2-Lax-Rules.pdf"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508111807451158a801e784e2049/Love-2-Lax-Field-Map-2025-(1).pdf"
+   }
+  ],
+  "end": "2025-10-05",
+  "fingerprint": "lacrosse|MA|love 2",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202508111807451158a801e784e2049",
+  "name": "Love 2 Lax",
+  "sport": "lacrosse",
+  "start": "2025-10-04",
+  "state": "MA",
+  "teams": 176,
+  "truth": "Laxachusetts Girls",
+  "venues": [
+   {
+    "address": "37 Buena Vista St,, Devens, MA 01434",
+    "lat": "42.547349800000",
+    "long": "-71.610318900000",
+    "venue_name": "Rogers Field"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Matthews, NC"
+  ],
+  "cur_date": "2026-09-27",
+  "cur_name": "2026 Fall Elite Series Playday",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260831131652479ea72f8f6b8334a",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250811185444187adc6697860b54f/Fall-Elite-Series-Desktop.png"
+   }
+  ],
+  "end": "2025-09-28",
+  "fingerprint": "lacrosse|NC|fall elite series playday",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250811185444187adc6697860b54f",
+  "name": "2025 Fall Elite Series Playday",
+  "sport": "lacrosse",
+  "start": "2025-09-28",
+  "state": "NC",
+  "teams": 17,
+  "truth": "Carolina Lacrosse Tournaments",
+  "venues": [
+   {
+    "address": "2425 Sports Pkwy, Matthews, NC 28105",
+    "lat": "35.110959100000",
+    "long": "-80.697876900000",
+    "venue_name": "Mecklenburg County Sportsplex at Matthews"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Round Rock, TX"
+  ],
+  "cur_date": "2026-10-24",
+  "cur_name": "ATX 2026 Zebra Open",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202606151337464585e04806a856d44",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508121610562158e81895d97c14e/SportsEngineTourney_Logo140x140.png"
+   }
+  ],
+  "end": "2025-10-05",
+  "fingerprint": "lacrosse|TX|atx zebra open",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202508121610562158e81895d97c14e",
+  "name": "ATX 2025 Zebra Open",
+  "sport": "lacrosse",
+  "start": "2025-10-05",
+  "state": "TX",
+  "teams": 16,
+  "truth": "ATX Zebra Open",
+  "venues": [
+   {
+    "address": "2001 N Kenney Fort Blvd, Round Rock, TX 78665",
+    "lat": "30.541648375491",
+    "long": "-97.630883048297",
+    "venue_name": "Round Rock Multipurpose Complex"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Conshohocken, PA"
+  ],
+  "cur_date": "2026-10-17",
+  "cur_name": "APEX FALL ROUND UP 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260819130746864fe5e7c0fbebf42",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250821173443257b1d905ccbf844f/4__2__large.png"
+   }
+  ],
+  "end": "2025-10-19",
+  "fingerprint": "lacrosse|PA|apex fall round up",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250821173443257b1d905ccbf844f",
+  "name": "APEX FALL ROUND UP 2025",
+  "sport": "lacrosse",
+  "start": "2025-10-18",
+  "state": "PA",
+  "teams": 154,
+  "truth": "APEX Lacrosse Events",
+  "venues": [
+   {
+    "address": "725 Conshohocken Road, Conshohocken, PA 19428",
+    "lat": "40.084900100000",
+    "long": "-75.315616400000",
+    "venue_name": "The Proving Grounds"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Conshohocken, PA"
+  ],
+  "cur_date": "2026-10-24",
+  "cur_name": "APEX FALL PRELIM 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2026082012461121647b64ce153ff42",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250821225053562c06f26ddac1145/7.png"
+   }
+  ],
+  "end": "2025-10-26",
+  "fingerprint": "lacrosse|PA|apex fall prelim",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250821225053562c06f26ddac1145",
+  "name": "APEX FALL PRELIM 2025",
+  "sport": "lacrosse",
+  "start": "2025-10-25",
+  "state": "PA",
+  "teams": 144,
+  "truth": "APEX Lacrosse Events",
+  "venues": [
+   {
+    "address": "725 Conshohocken Road, Conshohocken, PA 19428",
+    "lat": "40.084900100000",
+    "long": "-75.315616400000",
+    "venue_name": "The Proving Grounds"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Santa Ynez, CA"
+  ],
+  "cur_date": "2027-01-30",
+  "cur_name": "Santa Barbara Winter Showdown 2027",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260714224634630b715b7dff9af42",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508222002213899ce76dc67bff48/SBShowdownLogo140x140.png"
+   }
+  ],
+  "end": "2026-02-01",
+  "fingerprint": "lacrosse|CA|santa barbara winter showdown",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202508222002213899ce76dc67bff48",
+  "name": "Santa Barbara Winter Showdown 2026",
+  "sport": "lacrosse",
+  "start": "2026-01-31",
+  "state": "CA",
+  "teams": 28,
+  "truth": "Cal Coast Sports Ventures, LLC",
+  "venues": [
+   {
+    "address": "5648 Happy Canyon Road, Santa Ynez, CA 93460",
+    "lat": "34.620215915712",
+    "long": "-120.020023400627",
+    "venue_name": "Piocho Polo Field"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Santa Barbara, CA",
+   "Goleta, CA"
+  ],
+  "cur_date": "2027-03-05",
+  "cur_name": "Gold Coast Invitational 2027",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2026071423065203893c8d62857cd44",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508222033210910ba3f3cb228845/GoldCoastInvitationalLogoNoDate140x140.png"
+   }
+  ],
+  "end": "2026-03-07",
+  "fingerprint": "lacrosse|CA|gold coast",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202508222033210910ba3f3cb228845",
+  "name": "Gold Coast Invitational 2026",
+  "sport": "lacrosse",
+  "start": "2026-03-07",
+  "state": "CA",
+  "teams": 21,
+  "truth": "Cal Coast Sports Ventures, LLC",
+  "venues": [
+   {
+    "address": "103 South Turnpike Road, Santa Barbara, CA 93103",
+    "lat": "34.439142000000",
+    "long": "-119.788334000000",
+    "venue_name": "San Marcos High School"
+   },
+   {
+    "address": "7266 Alameda Avenue, Goleta, CA 93117",
+    "lat": "34.439209900000",
+    "long": "-119.879220700000",
+    "venue_name": "Dos Pueblos High School"
+   },
+   {
+    "address": "700 E Anapamu Street, Santa Barbara, CA 93103",
+    "lat": "34.429467000000",
+    "long": "-119.697547000000",
+    "venue_name": "Santa Barbara High School"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Frisco, TX"
+  ],
+  "cur_date": "2026-10-24",
+  "cur_name": "2026 Lax for Life Tournament",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260908185239452ef3308f79b5f46",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508271916059438883c07bf7fb4e/Lax-for-Life-Logo_2023-copy-2.png"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h202508271916059438883c07bf7fb4e/BF-PHILLIPS-FIELD-MAP---1-2-3-4-4a-4b.pdf"
+   }
+  ],
+  "end": "2025-10-19",
+  "fingerprint": "lacrosse|TX|for life",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202508271916059438883c07bf7fb4e",
+  "name": "2025 Lax for Life Lacrosse Tournament",
+  "sport": "lacrosse",
+  "start": "2025-10-18",
+  "state": "TX",
+  "teams": 43,
+  "truth": "Frisco Lacrosse Association",
+  "venues": [
+   {
+    "address": "3335 Timber Ridge Drive, Frisco, TX 75034",
+    "lat": "33.129340400000",
+    "long": "-96.862784200000",
+    "venue_name": "B.F. Phillips Community"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Acton, MA"
+  ],
+  "cur_date": "2026-09-13",
+  "cur_name": "Fall 2026 CELL",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2026090915080374220ed67cae6654a",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250903154004844a3558cef9c624c/Screen-Shot-2025-09-03-at-12.16.24-PM.png"
+   }
+  ],
+  "end": "2025-11-02",
+  "fingerprint": "lacrosse|MA|fall cell",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250903154004844a3558cef9c624c",
+  "name": "Fall Cell 2025",
+  "sport": "lacrosse",
+  "start": "2025-09-07",
+  "state": "MA",
+  "teams": 8,
+  "truth": "Clams Elite Lacrosse League",
+  "venues": [
+   {
+    "address": "30 Great Rd., Acton, MA 01720",
+    "lat": "42.472768600000",
+    "long": "-71.409504200000",
+    "venue_name": "Teamworks Acton"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Louisville, KY"
+  ],
+  "cur_date": "2027-04-14",
+  "cur_name": "2027 BRAVEHEART TOURNAMENT",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260908200749615cc2469deaeab41",
+  "documents": null,
+  "end": "2026-04-19",
+  "fingerprint": "lacrosse|KY|braveheart",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250903162305555fcc86ac745a54b",
+  "name": "2026 BRAVEHEART TOURNAMENT",
+  "sport": "lacrosse",
+  "start": "2026-04-15",
+  "state": "KY",
+  "teams": 33,
+  "truth": "Sacred Heart Academy",
+  "venues": [
+   {
+    "address": "3177 Lexington Rd, Louisville, KY 40207",
+    "lat": "38.249295200000",
+    "long": "-85.673947100000",
+    "venue_name": "SACRED HEART ACADEMY"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Grosse Pointe Woods, MI"
+  ],
+  "cur_date": "2026-10-04",
+  "cur_name": "Donnybrook Lacrosse Tournament 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2026092418252380636ecc2e6654e4c",
+  "documents": null,
+  "end": "2025-10-05",
+  "fingerprint": "lacrosse|MI|donnybrook",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202509031806341540d0895f19c5447",
+  "name": "Donnybrook 2025",
+  "sport": "lacrosse",
+  "start": "2025-10-05",
+  "state": "MI",
+  "teams": 37,
+  "truth": "313 Lacrosse LLC",
+  "venues": [
+   {
+    "address": "1045 Cook Road, Grosse Pointe Woods, MI 48236",
+    "lat": "42.424309700000",
+    "long": "-82.900985200000",
+    "venue_name": "University Liggett School"
+   },
+   {
+    "address": "1275 Cook Rd, Grosse Pointe Woods, MI 48236",
+    "lat": "42.425290400000",
+    "long": "-82.904435000000",
+    "venue_name": "Monteith"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Forest Grove, OR"
+  ],
+  "cur_date": "2026-12-12",
+  "cur_name": "December 2 Remember - 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202608261914254970e11a4c9160740",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h202509032114012674de9a760d19f48/Pac-w:-Sticks-copy.png"
+   }
+  ],
+  "end": "2025-12-06",
+  "fingerprint": "lacrosse|OR|december 2 remember",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202509032114012674de9a760d19f48",
+  "name": "December 2 Remember",
+  "sport": "lacrosse",
+  "start": "2025-12-06",
+  "state": "OR",
+  "teams": 14,
+  "truth": "Pacific University Lacrosse",
+  "venues": [
+   {
+    "address": "2043 College Way, Forest Grove, OR 97116",
+    "lat": "45.525479721721",
+    "long": "-123.110239853298",
+    "venue_name": "Pacific University"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Matthews, NC",
+   "Charlotte, NC",
+   "Ccharlotte, NC"
+  ],
+  "cur_date": "2026-10-24",
+  "cur_name": "2026 Charlotte Fall Classic",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260917151033242ff87ebc403d64e",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h202509091239428738662e7962be94c/rsz_fall_classic-Desktop.png"
+   }
+  ],
+  "end": "2025-10-26",
+  "fingerprint": "lacrosse|NC|charlotte fall",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202509091239428738662e7962be94c",
+  "name": "2025 Charlotte Fall Classic",
+  "sport": "lacrosse",
+  "start": "2025-10-25",
+  "state": "NC",
+  "teams": 88,
+  "truth": "Carolina Lacrosse Tournaments",
+  "venues": [
+   {
+    "address": "2425 Sports Pkwy, Matthews, NC 28105",
+    "lat": "35.110959100000",
+    "long": "-80.697876900000",
+    "venue_name": "Sportsplex Matthews"
+   },
+   {
+    "address": "11401 Ardrey Kell Rd, Charlotte, NC 28277",
+    "lat": "35.022350200000",
+    "long": "-80.842038800000",
+    "venue_name": "Elon Park"
+   },
+   {
+    "address": "5800 Sardis Rd, Charlotte, NC 28270",
+    "lat": "35.159408800000",
+    "long": "-80.778707300000",
+    "venue_name": "Providence Day School"
+   },
+   {
+    "address": "4004 Toringdon Way, Charlotte, NC 28277",
+    "lat": "35.072415200000",
+    "long": "-80.837713900000",
+    "venue_name": "Ballantyne Ridge High School"
+   },
+   {
+    "address": "1 Main Street, Ccharlotte, NC 28277",
+    "lat": "35.296005000000",
+    "long": "-81.015639100000",
+    "venue_name": "TEST"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Conshohocken, PA"
+  ],
+  "cur_date": "2026-09-27",
+  "cur_name": "APEX FALL NATIONAL 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260916182901138d3f18c4c4fd643",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250915170228834865bb349ddc141/IMG_6640-copy.png"
+   }
+  ],
+  "end": "2025-09-28",
+  "fingerprint": "lacrosse|PA|apex fall national",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250915170228834865bb349ddc141",
+  "name": "APEX FALL NATIONAL",
+  "sport": "lacrosse",
+  "start": "2025-09-28",
+  "state": "PA",
+  "teams": 8,
+  "truth": "APEX Lacrosse Events",
+  "venues": [
+   {
+    "address": "725 Conshohocken Rd, Conshohocken, PA 19428",
+    "lat": "40.274088000000",
+    "long": "-74.083194500000",
+    "venue_name": "PROVING GROUNDS"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Tampa, FL"
+  ],
+  "cur_date": "2026-11-21",
+  "cur_name": "IWLCA Debut",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260814142747013297525dd16274c",
+  "documents": null,
+  "end": "2025-11-23",
+  "fingerprint": "lacrosse|FL|iwlca debut",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250918151255881d6e3f1905a3249",
+  "name": "IWLCA Debut",
+  "sport": "lacrosse",
+  "start": "2025-11-22",
+  "state": "FL",
+  "teams": 63,
+  "truth": "IWLCA",
+  "venues": [
+   {
+    "address": "9330 E Columbus Dr., Tampa, FL 33619",
+    "lat": "27.964942100000",
+    "long": "-82.350023900000",
+    "venue_name": "Tournament Sportsplex of Tampa Bay"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Taunton, MA"
+  ],
+  "cur_date": "2026-09-27",
+  "cur_name": "2026 September 6s",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260917150338215404b9cc5c0234b",
+  "documents": null,
+  "end": "2025-09-28",
+  "fingerprint": "lacrosse|MA|september 6s",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250918172829563a7172fdde1de4a",
+  "name": "September 6s",
+  "sport": "lacrosse",
+  "start": "2025-09-28",
+  "state": "MA",
+  "teams": 34,
+  "truth": "Crimson Elite",
+  "venues": [
+   {
+    "address": "223 Fremont St, Taunton, MA 02780",
+    "lat": "41.929193600000",
+    "long": "-71.121189300000",
+    "venue_name": "Forekicks Taunton - Indoors"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Marietta, GA"
+  ],
+  "cur_date": "2026-10-04",
+  "cur_name": "ECFL 2026",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202609210058254496032574cf3b540",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250919002826819fbb994cb521d40/Untitled-(140-x-140-px).png"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h20250919002826819fbb994cb521d40/Lassiter-ECFL-MAP.pdf"
+   }
+  ],
+  "end": "2025-10-27",
+  "fingerprint": "lacrosse|GA|ecfl",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20250919002826819fbb994cb521d40",
+  "name": "ECFL 2025",
+  "sport": "lacrosse",
+  "start": "2025-10-03",
+  "state": "GA",
+  "teams": 19,
+  "truth": "Lassiter Lacrosse Booster Club",
+  "venues": [
+   {
+    "address": "2601 Shallowford Rd, Marietta, GA 30066",
+    "lat": "34.044376964571",
+    "long": "-84.476143613496",
+    "venue_name": "Lassiter High School Athletic Facility"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Wilmington, DE"
+  ],
+  "cur_date": "2026-10-03",
+  "cur_name": "2026 Next Up Showcase",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260916135056690b7721ace1c9144",
+  "documents": [
+   {
+    "kind": "image",
+    "url": "https://assets.tourneymachine.com/Tournament/h202509271842251477a1074aa80564b/Next-Up-Showcase-Desktop2.png"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h202509271842251477a1074aa80564b/Chase-Fieldhouse-Field-Map.pdf"
+   }
+  ],
+  "end": "2025-10-12",
+  "fingerprint": "lacrosse|DE|next up",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202509271842251477a1074aa80564b",
+  "name": "2025 Next Up Showcase",
+  "sport": "lacrosse",
+  "start": "2025-10-11",
+  "state": "DE",
+  "teams": 6,
+  "truth": "Team 24/7 Lacrosse",
+  "venues": [
+   {
+    "address": "780 A Street, Wilmington, DE 19801",
+    "lat": "39.728317981029",
+    "long": "-75.548607396022",
+    "venue_name": "Chase Fieldhouse Fields"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Hillsborough Township, NJ"
+  ],
+  "cur_date": "2026-10-17",
+  "cur_name": "2026 Knickerbocker Classic",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202609211351214753a1c02e903a648",
+  "documents": [
+   {
+    "kind": "logo",
+    "url": "https://assets.tourneymachine.com/Tournament/h202510071314094392ded57f834b64f/Knickerbocker-Logo-Updated2022-768x337-Small.png"
+   }
+  ],
+  "end": "2025-10-19",
+  "fingerprint": "lacrosse|NJ|knickerbocker",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202510071314094392ded57f834b64f",
+  "name": "2025 Knickerbocker Classic",
+  "sport": "lacrosse",
+  "start": "2025-10-18",
+  "state": "NJ",
+  "teams": 29,
+  "truth": "Victory Event Series",
+  "venues": [
+   {
+    "address": "137 Mountain View Rd, Hillsborough Township, NJ 08844",
+    "lat": "40.480223600000",
+    "long": "-74.665638100000",
+    "venue_name": "Iron Peak Sports"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Hillsborough, NJ"
+  ],
+  "cur_date": "2027-05-01",
+  "cur_name": "LAX Mayhem - May 1th 2027 (Grade 4-6)",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20260911120529313d41bfd7487f344",
+  "documents": [
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h20251022130525676955b99cbf2b34d/2026-MAYhem-Rules.pdf"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h20251022130525676955b99cbf2b34d/Mayhem-Map-(1).pdf"
+   }
+  ],
+  "end": "2026-05-16",
+  "fingerprint": "lacrosse|NJ|mayhem may grade 4 6",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h20251022130525676955b99cbf2b34d",
+  "name": "LAX Mayhem - May 16th 2026 (Grade 4-6)",
+  "sport": "lacrosse",
+  "start": "2026-05-16",
+  "state": "NJ",
+  "teams": 28,
+  "truth": "Hillsborough Youth Lacrosse (New)",
+  "venues": [
+   {
+    "address": "7 stockton rd, Hillsborough, NJ 08844",
+    "lat": "40.518994497691",
+    "long": "-74.652572133970",
+    "venue_name": "Triangle Field Complex"
+   }
+  ]
+ },
+ {
+  "city_states": [
+   "Hillsborough, NJ"
+  ],
+  "cur_date": "2027-05-02",
+  "cur_name": "LAX Mayhem - May 2th 2027 (Grade 7-8)",
+  "cur_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h202609111212301623e10592d62c64b",
+  "documents": [
+   {
+    "kind": "rules",
+    "url": "https://assets.tourneymachine.com/Tournament/h2025102213085390748088c98478b46/2026-MAYhem-Rules.pdf"
+   },
+   {
+    "kind": "field_map",
+    "url": "https://assets.tourneymachine.com/Tournament/h2025102213085390748088c98478b46/Mayhem-Map-(1).pdf"
+   }
+  ],
+  "end": "2026-05-17",
+  "fingerprint": "lacrosse|NJ|mayhem may grade 7 8",
+  "listing_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=h2025102213085390748088c98478b46",
+  "name": "LAX Mayhem - May 17th 2026 (Grade 7-8)",
+  "sport": "lacrosse",
+  "start": "2026-05-17",
+  "state": "NJ",
+  "teams": 17,
+  "truth": "Hillsborough Youth Lacrosse (New)",
+  "venues": [
+   {
+    "address": "7 stockton rd, Hillsborough, NJ 08844",
+    "lat": "40.518994497691",
+    "long": "-74.652572133970",
+    "venue_name": "Triangle Field Complex"
+   }
+  ]
+ }
+]
