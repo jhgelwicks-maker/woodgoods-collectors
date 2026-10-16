@@ -36,7 +36,7 @@ BROWSER = {"user-agent": TM_H["user-agent"], "accept": "text/html,application/xh
 PLATFORMS = re.compile(r"(^|\.)(tourneymachine|sportsengine|exposureevents|travelsports|gotsport|playbook365|eventbrite|"
                        r"facebook|instagram|twitter|x|tiktok|youtube|google|goo|bit|linktr|usalacrosse|laxallstars|"
                        r"insidelacrosse|laxnumbers|maxpreps|apple|microsoft|adobe|wix|squarespace|godaddy|"
-                       r"versantprivacy|versantmedia|sportngin|teamsnap|demosphere|stack|ussportscamps)\.(com|org|net|me|ly|gl|ee|co)$", re.I)
+                       r"versantprivacy|versantmedia|sportngin|teamsnap|demosphere|stack|ussportscamps|patch|nytimes|washingtonpost|usatoday|newsbreak|yelp|wikipedia)\.(com|org|net|me|ly|gl|ee|co)$", re.I)
 FREE_MAIL = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com", "icloud.com", "comcast.net", "verizon.net",
              "msn.com", "live.com", "me.com", "optonline.net", "att.net", "sbcglobal.net", "protonmail.com"}
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -288,8 +288,12 @@ def research_candidates(ed, hints, client, model="claude-sonnet-5-5"):
         except json.JSONDecodeError:
             return [], usage
         if not j.get("organizer_name") and not j.get("organizer_website"): return [], usage
-        return [{"method": "research", "name": j["organizer_name"] or None, "website": j["organizer_website"] or None,
-                 "evidence_url": j["evidence_url"] or None, "confidence": float(j.get("confidence") or 0),
+        site = j["organizer_website"] or None
+        ev = j["evidence_url"] or None
+        if site and is_platform(site):          # a news story or Facebook post is evidence, not the organizer's site
+            ev, site = ev or site, None
+        return [{"method": "research", "name": j["organizer_name"] or None, "website": site,
+                 "evidence_url": ev, "confidence": float(j.get("confidence") or 0),
                  "evidence": j.get("evidence")}], usage
     return [], usage
 

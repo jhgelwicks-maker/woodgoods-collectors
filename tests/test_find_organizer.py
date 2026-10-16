@@ -61,6 +61,7 @@ def test_year_shift_allows_one_to_three_years_same_weekday():
 def test_platforms_are_not_organizer_sites():
     assert F.is_platform("https://www.tourneymachine.com/Public/x")
     assert F.is_platform("facebook.com")
+    assert F.is_platform("https://patch.com/georgia/roswell")   # news sites can be evidence, never the organizer site
     assert not F.is_platform("https://thinklax.leagueapps.com/")      # a club's own registration subdomain is allowed
     assert not F.is_platform("https://tristarlacrosse.com/")
 
