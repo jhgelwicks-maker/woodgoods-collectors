@@ -37,6 +37,7 @@ def make_client():
     import anthropic
     key = os.environ["ANTHROPIC_API_KEY"]
     ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
-    if not ws and key.startswith("sk-ant-usr"):
-        ws = _discover_workspace(key)
+    if not ws:
+        log.info("Anthropic key type: %s...", key[:10])   # prefix only, never the key
+        ws = _discover_workspace(key)                      # a single-workspace key just gets 'no access' here; harmless
     return anthropic.Anthropic(api_key=key, default_headers={"anthropic-workspace-id": ws} if ws else None)
