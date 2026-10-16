@@ -338,8 +338,14 @@ def find_organizer(ed, stages=("stored", "tm", "documents", "research"), client=
     if "documents" in stages:
         cands += document_candidates(ed)
     if "research" in stages and client is not None:
-        rc, usage = research_candidates(ed, cands, client, model)
-        cands += rc
+        try:
+            rc, usage = research_candidates(ed, cands, client, model)
+            cands += rc
+        except Exception as e:  # noqa: BLE001  one failed lookup must not stop the batch
+            msg = str(e)
+            if "workspace" in msg or "authentication" in msg.lower() or "credit" in msg.lower(): raise   # config problems: stop now
+            log.warning("research failed for %s: %s", ed["name"], msg[:200])
+            cands.append({"method": "research", "error": msg[:300], "confidence": 0})
     # Only a VERIFIED candidate is an answer. A listing that only partly matches is "needs_review".
     # Unverified website/PDF/model hits are kept as hints (shown in the review screen, fed to later stages).
     LISTING = ("tm_listing", "stored_listing")
@@ -372,7 +378,9 @@ def main():
     stages = tuple(o.stages.split(","))
     client = None
     if "research" in stages and os.environ.get("ANTHROPIC_API_KEY"):
-        import anthropic; client = anthropic.Anthropic()
+        import anthropic
+        hdrs = {"anthropic-workspace-id": os.environ["ANTHROPIC_WORKSPACE_ID"]} if os.environ.get("ANTHROPIC_WORKSPACE_ID") else None
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], default_headers=hdrs)
     elif "research" in stages:
         log.warning("ANTHROPIC_API_KEY not set: research stage skipped")
     with open(o.out, "w") as f:

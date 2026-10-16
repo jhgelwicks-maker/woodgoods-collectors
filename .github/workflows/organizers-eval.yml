@@ -25,17 +25,21 @@ jobs:
       - name: Run Find Organizer
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           STAGES: ${{ github.event.inputs.stages || 'research' }}
           LIMIT: ${{ github.event.inputs.limit || '20' }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY secret is missing" | tee eval_note.txt; fi
+          if [ -z "$ANTHROPIC_WORKSPACE_ID" ]; then echo "ANTHROPIC_WORKSPACE_ID secret is missing" | tee -a eval_note.txt; fi
           python -m collectors.organizers.find --fixture tests/fixtures/find_organizer_truth.json \
             --pool tests/fixtures/listing_pool.json --stages "$STAGES" --limit "$LIMIT" --out results.jsonl
           python tools/eval_find_organizer.py results.jsonl | tee summary.txt
           python tools/eval_find_organizer.py results.jsonl --usage | tee -a summary.txt
           cat summary.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Save summary to eval-results branch
+        if: always()
         run: |
+          touch summary.txt
           git config user.name "github-actions"; git config user.email "actions@github.com"
           mkdir -p /tmp/out && cp summary.txt /tmp/out/ && [ -f eval_note.txt ] && cp eval_note.txt /tmp/out/ || true
           if git fetch -q origin eval-results 2>/dev/null; then git checkout -q -B eval-results origin/eval-results
