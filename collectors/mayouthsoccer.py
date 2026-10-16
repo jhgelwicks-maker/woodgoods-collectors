@@ -10,8 +10,8 @@ SCHEMA = ("Return ONLY a JSON array. Each item: {name, dates_text, city, state, 
 
 def extract_with_claude(text):
     import anthropic
-    hdrs = {"anthropic-workspace-id": os.environ["ANTHROPIC_WORKSPACE_ID"]} if os.environ.get("ANTHROPIC_WORKSPACE_ID") else None
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], default_headers=hdrs)
+    from .anthropic_client import make_client
+    client = make_client()
     msg = client.messages.create(model="claude-sonnet-4-6", max_tokens=4000,
         system="You extract youth sports tournament listings from web page text into strict JSON. No prose, no markdown fences.",
         messages=[{"role": "user", "content": f"{SCHEMA}\n\nPAGE TEXT:\n{text[:60000]}"}])

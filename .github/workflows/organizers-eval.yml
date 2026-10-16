@@ -30,7 +30,6 @@ jobs:
           LIMIT: ${{ github.event.inputs.limit || '20' }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY secret is missing" | tee eval_note.txt; fi
-          if [ -z "$ANTHROPIC_WORKSPACE_ID" ]; then echo "ANTHROPIC_WORKSPACE_ID secret is missing" | tee -a eval_note.txt; fi
           python -m collectors.organizers.find --fixture tests/fixtures/find_organizer_truth.json \
             --pool tests/fixtures/listing_pool.json --stages "$STAGES" --limit "$LIMIT" --out results.jsonl
           python tools/eval_find_organizer.py results.jsonl | tee summary.txt

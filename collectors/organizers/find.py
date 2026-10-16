@@ -378,9 +378,8 @@ def main():
     stages = tuple(o.stages.split(","))
     client = None
     if "research" in stages and os.environ.get("ANTHROPIC_API_KEY"):
-        import anthropic
-        hdrs = {"anthropic-workspace-id": os.environ["ANTHROPIC_WORKSPACE_ID"]} if os.environ.get("ANTHROPIC_WORKSPACE_ID") else None
-        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], default_headers=hdrs)
+        from ..anthropic_client import make_client
+        client = make_client()
     elif "research" in stages:
         log.warning("ANTHROPIC_API_KEY not set: research stage skipped")
     with open(o.out, "w") as f:
