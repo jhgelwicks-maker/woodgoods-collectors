@@ -116,6 +116,8 @@ def flatten(pays: list[dict], ords: dict[str, dict], loc: dict) -> list[dict]:
             "location_id": p.get("location_id"),
             "location_name": loc["name"],
             "device_id": (p.get("device_details") or {}).get("device_id"),
+            "device_name": (p.get("device_details") or {}).get("device_name"),
+            "team_member_id": p.get("team_member_id") or p.get("employee_id"),
             "created_at": created,
             "local_date": local.date().isoformat(),
             "local_hour": local.hour,
