@@ -42,8 +42,12 @@ def _h():
 
 def _get(path, params=None):
     for attempt in range(5):
-        r = requests.get(f"{API}{path}", headers=_h(), params=params, timeout=30)
-        if r.status_code == 429:
+        try:
+            r = requests.get(f"{API}{path}", headers=_h(), params=params, timeout=30)
+        except requests.exceptions.RequestException:   # dropped connection / SSL EOF: retry
+            if attempt == 4: raise
+            time.sleep(2 ** attempt); continue
+        if r.status_code == 429 or r.status_code >= 500:
             time.sleep(2 ** attempt)
             continue
         r.raise_for_status()
@@ -53,8 +57,12 @@ def _get(path, params=None):
 
 def _post(path, body):
     for attempt in range(5):
-        r = requests.post(f"{API}{path}", headers=_h(), json=body, timeout=30)
-        if r.status_code == 429:
+        try:
+            r = requests.post(f"{API}{path}", headers=_h(), json=body, timeout=30)
+        except requests.exceptions.RequestException:
+            if attempt == 4: raise
+            time.sleep(2 ** attempt); continue
+        if r.status_code == 429 or r.status_code >= 500:
             time.sleep(2 ** attempt)
             continue
         r.raise_for_status()
