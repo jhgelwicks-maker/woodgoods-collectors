@@ -85,11 +85,12 @@ def schedule_stats(tid, body):
     div_ids = list(dict.fromkeys(re.findall(r"IDDivision=(h[0-9a-f]{31})", body)))
     if not div_ids: return None
     cx = parse_complexes(body)
-    per_site, games, sched_teams, fields = site_counts(tid, div_ids[:40], cx)
+    from .backfill_tourneymachine import MAX_DIVISIONS
+    per_site, games, sched_teams, fields, profile = site_counts(tid, div_ids[:MAX_DIVISIONS], cx)
     fields_used = sum(len(v) for v in fields.values()) or None
     return {"per_site": dict(per_site), "games": dict(games), "schedule_teams": sched_teams or None,
             "fields": {k: sorted(v) for k, v in fields.items()}, "fields_used": fields_used,
-            "profile": getattr(site_counts, "last_schedule", None)}
+            "profile": profile}
 
 def collect():
     seen = search_all()
@@ -116,6 +117,10 @@ def collect():
             try: clim = weather.climatology(float(v0["lat"]), float(v0["long"]), s, e)
             except Exception as ex: log.warning("climatology failed %s: %s", tid, ex)
         fc = weather.forecast(float(v0["lat"]), float(v0["long"]), s, e) if v0 and s and s <= today + datetime.timedelta(days=15) else None
+        sched = None
+        if t.get("_body") and s and s <= today + datetime.timedelta(days=SCHEDULE_WINDOW_DAYS):
+            try: sched = schedule_stats(tid, t["_body"])
+            except Exception as ex: log.warning("schedule read failed %s: %s", tid, ex)
         rows.append({
             "weather_climatology": clim, "sun_score": clim["sun_score"] if clim else None,
             "weather_forecast": fc, "uv_index": (fc or {}).get("uv_index_max") or (clim or {}).get("uv_index_est"),
