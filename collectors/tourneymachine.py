@@ -60,6 +60,7 @@ def team_counts(ids, workers=3):
         time.sleep(0.3)
         if not b: return tid, None
         opts = OPT.findall(b)
+        # unique team = Tourney Machine team ID (one per division + exact name); never count by name alone (Justin, 2026-10-20)
         teams = {o[0] for o in opts}; divs = collections.Counter(o[2] for o in opts)
         docs = common.parse_documents(b)
         return tid, {"documents": docs, "has_field_map": bool(docs and any(d["kind"] == "field_map" for d in docs)),

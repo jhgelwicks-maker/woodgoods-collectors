@@ -114,6 +114,15 @@ collectors whose required key is missing.
   Sports Downingtown 28, Capelli Tinton Falls 20. Venue value = flow × teams in reach.
 - **Effective teams** = teams on fields within walking reach of the village (from schedule field
   assignments), not the listing total. A 300-team SoccerPlex event is ~60 effective teams.
+- **Unique team = exact team name within its division (Justin, 2026-10-20).** "Tomahawks 2028" and
+  "Tomahawks 2027", "2028 Black" and "2028 Purple", "2028 A" and "2028 AA" are different teams, and the
+  same name in two divisions is two teams. Count teams by Tourney Machine team ID (`data-teamid` / the
+  team dropdown's option value), which is already unique per division — never by name alone. Any code
+  that reads division schedules must keep the division with every game; a schedule that loses it merges
+  clubs that reuse names across age groups (Fore Kicks Scarecrow 2025: 21 names for 55 teams). Sanity
+  check every schedule: no team on two fields at the same time, no team with more than ~5 games a day.
+  `clubs[]` deliberately rolls teams up to the club (organization) for audience tagging; it is not a
+  team count.
 - **Schedule quality**: long days both days + a meaningful share of Saturday's fields still playing
   after 2:30pm on the last day. Love 2 Lax (Sat 8–6:40 on 14 fields, Sun 8–5:20 on 10, 8 late) = 93.
   Sunday ending 11am ≈ 33; one championship field until 6 ≈ 39.

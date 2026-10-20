@@ -64,6 +64,7 @@ def parse_event(h):
     t = re.sub(r"<[^>]+>", " ", h)
     d = re.search(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}(?:\s*-\s*(?:\w+ )?\d{1,2})?,? 20\d\d", t)
     s, e = common.parse_date_range(d.group(0).replace(" ,", ",")) if d else (None, None)
+    # unique team = Tourney Machine team ID (one per division + exact name); never count by name alone (Justin, 2026-10-20)
     opts = OPT.findall(h); teams = {o[0] for o in opts}; divs = collections.Counter(o[2] for o in opts)
     acc = {}
     seg = h[h.index("loadLocations"):] if "loadLocations" in h else ""
@@ -115,6 +116,7 @@ def site_counts(tid, div_ids, venues):
                     t = datetime.datetime.strptime(tm_.group(1).replace(" ", ""), "%I:%M%p")
                     game_log.append((dcls[5:], t.hour * 60 + t.minute, site, fac))
                 except ValueError: pass
+            # teams per site are counted by team ID, so the same club name in two age groups stays two teams
             for tm in TEAMID.findall(row): team_sites[tm].add(site); div_sites[dv].add(site)
     per_site = collections.Counter(s for sites in team_sites.values() for s in sites)
     return per_site, games, len(team_sites), {k: sorted(v) for k, v in fields.items()}, schedule_profile(game_log)
