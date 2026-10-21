@@ -11,12 +11,12 @@ Weekly crawl of tournament sources into the Woodgoods Ops Supabase database. Sto
 
 ## Sources
 - tourneymachine — JSON endpoint, all states, team counts
-- mayouthsoccer — MA soccer sanctioned list (needs ANTHROPIC_API_KEY)
+- mayouthsoccer — MA soccer sanctioned list; table read directly, each tournament's website visited (no API key)
 - fairsandfestivals — all 50 states; vendor fees/contacts/attendance are paid-member fields. Optional secret `FF_COOKIE` (your logged-in cookie string) unlocks them
 - eventeny — all 50 states; booth fees, application deadline, rain date, attendance when stated, tags
 
 ## Adding a source
-Copy `collectors/mayouthsoccer.py` (HTML page → Claude → rows) or `collectors/tourneymachine.py` (JSON endpoint → rows). Return `(rows, errors)` with the keys documented in `collectors/common.py`. Add the module name to `COLLECTORS` in `run.py`.
+Copy `collectors/mayouthsoccer.py` (HTML table → rows) or `collectors/tourneymachine.py` (JSON endpoint → rows). Return `(rows, errors)` with the keys documented in `collectors/common.py`. Add the module name to `COLLECTORS` in `run.py`.
 
 ## Filters
 Edit rows in `filter_rules` (or the Lovable admin screen), then run `select regate_all();`. Nothing is deleted; `gate_passed` just flips.

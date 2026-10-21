@@ -3,7 +3,7 @@ from collectors import common
 from collectors.common import log
 
 COLLECTORS = ["tourneymachine", "mayouthsoccer", "fairsandfestivals", "eventeny", "woodgoods_lacrosse"]   # add a module name here per new source
-NEEDS_ANTHROPIC = {"mayouthsoccer"}
+NEEDS_ANTHROPIC = set()   # collectors that call Claude; skipped when ANTHROPIC_API_KEY is missing
 
 def main():
     only = [a for a in sys.argv[1:] if a]
