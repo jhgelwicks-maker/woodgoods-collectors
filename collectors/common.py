@@ -158,8 +158,16 @@ def roster_for(sport, gender=None, grad_min=None, grad_max=None, season_year=Non
         return ROSTER["lacrosse_girls"] if gender == "girls" else ROSTER["lacrosse"]
     return ROSTER.get(sp)
 
+def team_int(v):
+    """A team count as a whole number, or None. Text like '97 college coaches' is not a team count."""
+    if isinstance(v, bool): return None
+    if isinstance(v, int): return v if v >= 0 else None
+    if isinstance(v, float): return int(v) if v >= 0 and v.is_integer() else None
+    s = str(v if v is not None else "").strip().replace(",", "")
+    return int(s) if s.isdigit() else None
+
 def estimate_attendance(r):
-    teams = r.get("team_count") or r.get("event_team_count")
+    teams = team_int(r.get("team_count")) or team_int(r.get("event_team_count"))
     if not teams: return None, None
     ros = roster_for(r.get("sport"), (r.get("raw") or {}).get("gender"), r.get("grad_year_min"), r.get("grad_year_max"))
     if not ros: return None, None
@@ -335,6 +343,7 @@ def states_from(city_states):
 
 def normalize(row):
     r = dict(row)
+    if "team_count" in r: r["team_count"] = team_int(r["team_count"])   # never send text to a numeric column
     r["dedupe_key"] = f"{r['source']}:{r['source_event_id']}"
     cs = normalize_city_states(r.get("city_states") or [])
     r["venue_count"] = r.get("venue_count") or (len(cs) or None)
@@ -403,12 +412,22 @@ class Supabase:
                 merged[key].update(nr)          # later row fills gaps, never blanks a value
             else:
                 merged[key] = nr
-        rows = list(merged.values())
+        # The app rejects rows whose source differs from the batch's source (still answering 200), so a collector
+        # that emits several sources (woodgoods_lacrosse: wg-nxt, wg-apex, ...) must send one batch per source.
+        by_source = {}
+        for r in merged.values():
+            by_source.setdefault(r["source"], []).append(r)
         n = 0
-        for i in range(0, len(rows), chunk):
-            batch = rows[i:i+chunk]
-            self._post({"source": batch[0]["source"] if batch else None, "rows": batch})
-            n += len(batch)
+        for source, group in by_source.items():
+            for i in range(0, len(group), chunk):
+                batch = group[i:i+chunk]
+                res = self._post({"source": source, "rows": batch})
+                res = res if isinstance(res, dict) else {}
+                saved = res.get("upserted", len(batch))
+                n += saved
+                lost = {k: res[k] for k in ("skipped", "rejected", "failed_batches") if res.get(k)}
+                if lost or saved < len(batch):
+                    log.warning("ingest %s: sent %d, saved %d, %s %s", source, len(batch), saved, lost, (res.get("errors") or [])[:3])
         return n
 
     def log_run(self, source, rows_seen, rows_upserted, errors, started, note=""):

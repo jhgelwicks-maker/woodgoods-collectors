@@ -136,10 +136,9 @@ class LeagueAppsCollector(BaseCollector):
 
         name = re.sub(r"^20\d{2}\s+", "", title).strip()
         body = re.sub(r"\s+", " ", " ".join(lines[i: i + 60]))[:2500]
-        teams = None
-        tm = re.search(r"(\d{2,3})\s+college coaches", body, re.I)
-        if tm:
-            teams = f"{tm.group(1)} college coaches"
+        # "97 college coaches attended" is how many recruiters came, not how many teams played
+        cc = re.search(r"(\d{2,3})\s+college coaches", body, re.I)
+        coaches = int(cc.group(1)) if cc else None
 
         return Event(
             organizer=self.organizer, name=name,
@@ -147,7 +146,7 @@ class LeagueAppsCollector(BaseCollector):
             venue=venue, city=city, state=state,
             gender=(self.default_gender if self.default_gender != "unknown"
                     else normalize_gender(name + " " + body[:800])),
-            age_range=divisions, team_count=teams,
+            age_range=divisions, college_coaches=coaches,
             event_type="showcase" if "showcase" in name.lower() else "tournament",
             source_url=url,
         )

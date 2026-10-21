@@ -65,7 +65,8 @@ def to_common(ev, collector_slug):
         "listing_url": ev.source_url,
         "official_url": ev.source_url,
         "raw": {"gender": ev.gender, "event_type": ev.event_type,
-                "raw_date": ev.raw_date, "collector": collector_slug},
+                "raw_date": ev.raw_date, "collector": collector_slug,
+                "college_coaches": ev.college_coaches},
     }
 
 

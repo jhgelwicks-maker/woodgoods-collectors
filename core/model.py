@@ -177,6 +177,7 @@ class Event:
     gender: str = "unknown"
     age_range: Optional[str] = None
     team_count: Optional[str] = None
+    college_coaches: Optional[int] = None   # recruiters attending (a showcase signal), never a team count
     vendor_fee: Optional[str] = None
     event_type: str = "tournament"
     source_url: Optional[str] = None
