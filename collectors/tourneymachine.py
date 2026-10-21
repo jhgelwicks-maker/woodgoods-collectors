@@ -111,19 +111,16 @@ def collect():
         t = tc.get(tid) or {}
         if tid in tc and not t: errors += 1
         cx = t.get("complexes") or []
-        clim = None
         v0 = next((v for v in cx if v.get("lat") and v.get("long")), None)
-        if v0 and s and today <= s <= today + datetime.timedelta(days=DETAIL_WINDOW_DAYS):
-            try: clim = weather.climatology(float(v0["lat"]), float(v0["long"]), s, e)
-            except Exception as ex: log.warning("climatology failed %s: %s", tid, ex)
-        fc = weather.forecast(float(v0["lat"]), float(v0["long"]), s, e) if v0 and s and s <= today + datetime.timedelta(days=15) else None
+        # No 20-year climatology here: one archive call per venue every week (35-90 min) pushed the run past
+        # the Actions time limit. Values already stored in the app are kept (ingest never overwrites with null).
+        fc =weather.forecast(float(v0["lat"]), float(v0["long"]), s, e) if v0 and s and s <= today + datetime.timedelta(days=15) else None
         sched = None
         if t.get("_body") and s and s <= today + datetime.timedelta(days=SCHEDULE_WINDOW_DAYS):
             try: sched = schedule_stats(tid, t["_body"])
             except Exception as ex: log.warning("schedule read failed %s: %s", tid, ex)
         rows.append({
-            "weather_climatology": clim, "sun_score": clim["sun_score"] if clim else None,
-            "weather_forecast": fc, "uv_index": (fc or {}).get("uv_index_max") or (clim or {}).get("uv_index_est"),
+            "weather_forecast": fc, "uv_index": (fc or {}).get("uv_index_max"),
             "source": "tourneymachine", "source_event_id": tid,
             "name": r["title"], "sport": r["icon"], "organizer_name": r["customer"],
             "start_date": s, "end_date": e,
