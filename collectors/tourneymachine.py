@@ -111,16 +111,13 @@ def collect():
         t = tc.get(tid) or {}
         if tid in tc and not t: errors += 1
         cx = t.get("complexes") or []
-        v0 = next((v for v in cx if v.get("lat") and v.get("long")), None)
-        # No 20-year climatology here: one archive call per venue every week (35-90 min) pushed the run past
-        # the Actions time limit. Values already stored in the app are kept (ingest never overwrites with null).
-        fc =weather.forecast(float(v0["lat"]), float(v0["long"]), s, e) if v0 and s and s <= today + datetime.timedelta(days=15) else None
+        # No weather here. The 20-year climatology (35-90 min a run) is gone, and the 15-day forecast is fetched by
+        # weather_updates() after these rows are sent, so a slow Open-Meteo can never hold back teams or venues.
         sched = None
         if t.get("_body") and s and s <= today + datetime.timedelta(days=SCHEDULE_WINDOW_DAYS):
             try: sched = schedule_stats(tid, t["_body"])
             except Exception as ex: log.warning("schedule read failed %s: %s", tid, ex)
         rows.append({
-            "weather_forecast": fc, "uv_index": (fc or {}).get("uv_index_max"),
             "source": "tourneymachine", "source_event_id": tid,
             "name": r["title"], "sport": r["icon"], "organizer_name": r["customer"],
             "start_date": s, "end_date": e,
@@ -150,12 +147,35 @@ def collect():
     return rows, errors
 
 
+FORECAST_DAYS = 15   # Open-Meteo forecasts reach ~16 days
+
+def weather_updates(rows):
+    """Forecast-only rows for events starting in the next FORECAST_DAYS, built from rows collect() already sent.
+    run.py sends these last, after the main rows and the history archive, with Supabase.update_fields()."""
+    today = datetime.date.today()
+    out, asked = [], 0
+    for r in rows:
+        s, e = r.get("start_date"), r.get("end_date")
+        if not s or not (today - datetime.timedelta(days=3) <= s <= today + datetime.timedelta(days=FORECAST_DAYS)): continue
+        v0 = next((v for v in (r.get("venues") or []) if v.get("lat") and v.get("long")), None)
+        if not v0: continue
+        asked += 1
+        fc = weather.forecast(float(v0["lat"]), float(v0["long"]), s, e)
+        if fc:
+            out.append({"source": r["source"], "source_event_id": r["source_event_id"], "name": r["name"],
+                        "sport": r.get("sport"), "start_date": s, "end_date": e,
+                        "weather_forecast": fc, "uv_index": fc.get("uv_index_max")})
+    log.info("tourneymachine weather: %d events in the next %d days, %d forecasts, %d skipped (forecast service down)",
+             asked, FORECAST_DAYS, len(out), weather._fc_state["skipped"])
+    return out
+
+
 # ---- Weekly: archive events that just finished into event_history --------------------------
 FINISHED_LOOKBACK_DAYS = 10
 
 def collect_history():
     """Events that ended in the last FINISHED_LOOKBACK_DAYS: refetch the final team list, schedules,
-    per-site counts, documents, clubs and actual weather, in the same shape as the backfill rows.
+    per-site counts, documents and clubs, in the same shape as the backfill rows (the app adds actual weather).
     Posted as {"history": [...]} so event_history grows every week without rerunning the backfill."""
     from . import backfill_tourneymachine as bf
     seen = search_all()
@@ -185,10 +205,8 @@ def collect_history():
             row["state"] = st; row["name_core"] = common.name_core(row["name"])
             row["event_fingerprint"] = common.fingerprint(row["name"], row["sport"], st)
             row["calendar_week"] = s0.isocalendar()[1] if s0 else None
-            v0 = next((v for v in ev["venues"] if v.get("lat") and v.get("long")), None)
-            if v0:
-                try: row["weather_actual"] = weather.actual(float(v0["lat"]), float(v0["long"]), s0, e0)
-                except Exception: pass
+            # weather_actual is not fetched here: the app fills history weather gaps nightly (daily-bookings cron,
+            # fillHistoryWeather), and per-event archive calls (3 tries x 40s when Open-Meteo is down) slowed the run.
             rows.append(row)
         except Exception as ex:
             errors += 1; log.warning("archive failed %s: %s", tid, ex)

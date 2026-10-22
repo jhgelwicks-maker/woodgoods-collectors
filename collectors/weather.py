@@ -101,21 +101,42 @@ def climatology(lat, lon, start, end=None, years=20, window_days=7):
 
 
 FORECAST = "https://api.open-meteo.com/v1/forecast"
+FORECAST_TIMEOUT = 10        # a healthy answer takes ~0.5s
+FORECAST_MAX_FAILS = 3       # this many failures in a row = Open-Meteo is down for this run; stop asking
+_fc_state = {"fails": 0, "down": False, "skipped": 0}
+_fc_cache = {}               # (lat, lon, start, end) -> result, so events sharing a venue and dates cost one call
+
 def forecast(lat, lon, start, end=None):
-    """Real forecast inside 16 days: daily UV index max, precip probability, high. None if out of range."""
+    """Real forecast inside 16 days: daily UV index max, precip probability, high. None if out of range.
+    Fails fast: on a 2026-10-21 GitHub run every call timed out at 30s; now each waits 10s at most and after
+    FORECAST_MAX_FAILS failures in a row the rest of the run skips forecasts instead of waiting on each one."""
     import requests
     end = end or start
     if not (lat and lon and start) or start > datetime.date.today() + datetime.timedelta(days=15): return None
+    if _fc_state["down"]:
+        _fc_state["skipped"] += 1; return None
+    key = (round(float(lat), 3), round(float(lon), 3), start, end)
+    if key in _fc_cache: return _fc_cache[key]
     try:
         r = requests.get(FORECAST, params={"latitude": lat, "longitude": lon, "start_date": start.isoformat(), "end_date": end.isoformat(),
                                             "daily": "uv_index_max,precipitation_probability_max,temperature_2m_max,sunshine_duration",
-                                            "temperature_unit": "fahrenheit", "timezone": "America/New_York"}, timeout=30)
-        d = r.json().get("daily") if r.status_code == 200 else None
-        if not d or not d.get("time"): return None
-        uv = [x for x in d.get("uv_index_max") or [] if x is not None]
-        return {"uv_index_max": max(uv) if uv else None,
-                "precip_probability_max": max([x for x in d.get("precipitation_probability_max") or [] if x is not None] or [None]),
-                "high_f": max([x for x in d.get("temperature_2m_max") or [] if x is not None] or [None]),
-                "sun_hours_avg": round(statistics.mean([x / 3600 for x in d.get("sunshine_duration") or [] if x is not None]), 1) if d.get("sunshine_duration") else None}
+                                            "temperature_unit": "fahrenheit", "timezone": "America/New_York"}, timeout=FORECAST_TIMEOUT)
+        if r.status_code != 200: raise RuntimeError(f"HTTP {r.status_code}")
+        d = r.json().get("daily")
     except Exception as e:
-        log.warning("forecast failed: %s", e); return None
+        _fc_state["fails"] += 1
+        log.warning("forecast failed (%d in a row): %s", _fc_state["fails"], e)
+        if _fc_state["fails"] >= FORECAST_MAX_FAILS:
+            _fc_state["down"] = True
+            log.warning("forecast: %d failures in a row, skipping forecasts for the rest of this run", _fc_state["fails"])
+        return None
+    _fc_state["fails"] = 0
+    out = None
+    if d and d.get("time"):
+        uv = [x for x in d.get("uv_index_max") or [] if x is not None]
+        out = {"uv_index_max": max(uv) if uv else None,
+               "precip_probability_max": max([x for x in d.get("precipitation_probability_max") or [] if x is not None] or [None]),
+               "high_f": max([x for x in d.get("temperature_2m_max") or [] if x is not None] or [None]),
+               "sun_hours_avg": round(statistics.mean([x / 3600 for x in d.get("sunshine_duration") or [] if x is not None]), 1) if d.get("sunshine_duration") else None}
+    _fc_cache[key] = out
+    return out

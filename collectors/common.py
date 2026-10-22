@@ -430,6 +430,21 @@ class Supabase:
                     log.warning("ingest %s: sent %d, saved %d, %s %s", source, len(batch), saved, lost, (res.get("errors") or [])[:3])
         return n
 
+    def update_fields(self, source, rows, chunk=400):
+        """Send a few fields for rows that were already sent (e.g. weather after the main send). Skips normalize():
+        its defaults (split_venue=False, is_league=False, ...) would overwrite real values. The app never overwrites
+        with null, so only the fields present here change. Each row needs source, source_event_id and name."""
+        n = 0
+        for i in range(0, len(rows), chunk):
+            batch = [{**r, "dedupe_key": f"{r['source']}:{r['source_event_id']}"} for r in rows[i:i+chunk]]
+            res = self._post({"source": source, "rows": batch})
+            res = res if isinstance(res, dict) else {}
+            saved = res.get("upserted", len(batch))
+            n += saved
+            if saved < len(batch):
+                log.warning("ingest %s (field update): sent %d, saved %d %s", source, len(batch), saved, (res.get("errors") or [])[:3])
+        return n
+
     def log_run(self, source, rows_seen, rows_upserted, errors, started, note=""):
         self._post({"source": source, "run": {"started_at": started, "finished_at": datetime.datetime.utcnow().isoformat()+"Z",
                     "rows_seen": rows_seen, "rows_upserted": rows_upserted, "errors": errors, "note": note[:2000]}})

@@ -28,6 +28,12 @@ def main():
                 for i in range(0, len(hrows), 150):
                     db._post({"source": f"{name}-history", "history": [{k: (v.isoformat() if isinstance(v, datetime.date) else v) for k, v in r.items()} for r in hrows[i:i+150]]})
                 log.info("%s: %d finished events archived to history", name, len(hrows))
+            if hasattr(mod, "weather_updates"):                      # last: a slow weather site can't hold back rows or history
+                try:
+                    w = mod.weather_updates(rows)
+                    if w: log.info("%s: %d forecasts sent, %d saved", name, len(w), db.update_fields(name, w))
+                except Exception as e:
+                    log.warning("%s weather step failed (rows and history are already saved): %s", name, e)
         except Exception as e:
             failures += 1; note = traceback.format_exc()
             log.error("%s failed: %s", name, e)
