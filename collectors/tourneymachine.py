@@ -117,6 +117,12 @@ def collect():
         if t.get("_body") and s and s <= today + datetime.timedelta(days=SCHEDULE_WINDOW_DAYS):
             try: sched = schedule_stats(tid, t["_body"])
             except Exception as ex: log.warning("schedule read failed %s: %s", tid, ex)
+        if sched and cx:      # teams / games / fields at each facility, same shape as the history rows
+            for v in cx:
+                v["teams"] = sched["per_site"].get(v["venue_name"])
+                v["games"] = sched["games"].get(v["venue_name"])
+                v["fields"] = sched["fields"].get(v["venue_name"])
+                v["field_count"] = len(v["fields"]) if v["fields"] else None
         rows.append({
             "source": "tourneymachine", "source_event_id": tid,
             "name": r["title"], "sport": r["icon"], "organizer_name": r["customer"],

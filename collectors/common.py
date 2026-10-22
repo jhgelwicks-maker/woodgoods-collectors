@@ -398,12 +398,33 @@ class Supabase:
         self.h = {"x-ingest-key": os.environ["INGEST_KEY"], "Content-Type": "application/json"}
 
     def _post(self, body):
-        res = requests.post(self.url, headers=self.h, data=json.dumps(body, default=str), timeout=120)
-        if res.status_code >= 300:
+        res = requests.post(self.url, headers=self.h, data=json.dumps(body, default=str), timeout=180)
+        if res.status_code >= 300 and res.status_code != 207:
             raise RuntimeError(f"ingest failed {res.status_code}: {res.text[:500]}")
-        return res.json() if res.text else {}
+        try:
+            return res.json()
+        except ValueError:      # an HTML error page or a cut-off reply is NOT a success
+            raise RuntimeError(f"ingest replied {res.status_code} without JSON: {res.text[:300]!r}")
 
-    def upsert_candidates(self, rows, chunk=400):
+    def _send_rows(self, source, batch):
+        """Post one batch; a reply that doesn't confirm the rows saved is retried in halves, then counted as lost.
+        (Until 2026-10-22 a missing 'upserted' count was read as 'all saved', and big batches were silently lost.)"""
+        try:
+            res = self._post({"source": source, "rows": batch})
+            saved = res.get("upserted") if isinstance(res, dict) else None
+        except Exception as e:
+            log.warning("ingest %s: batch of %d failed: %s", source, len(batch), e); saved, res = None, {}
+        if saved is None:
+            if len(batch) > 5:
+                mid = len(batch) // 2
+                return self._send_rows(source, batch[:mid]) + self._send_rows(source, batch[mid:])
+            log.error("ingest %s: %d rows NOT saved (no confirmation from the app)", source, len(batch)); return 0
+        lost = {k: res[k] for k in ("skipped", "rejected", "failed_batches") if res.get(k)}
+        if lost or saved < len(batch):
+            log.warning("ingest %s: sent %d, saved %d, %s %s", source, len(batch), saved, lost, (res.get("errors") or [])[:3])
+        return saved
+
+    def upsert_candidates(self, rows, chunk=50):
         merged = {}
         for r in rows:
             nr = {k: v for k, v in normalize(r).items() if v is not None}
@@ -420,29 +441,17 @@ class Supabase:
         n = 0
         for source, group in by_source.items():
             for i in range(0, len(group), chunk):
-                batch = group[i:i+chunk]
-                res = self._post({"source": source, "rows": batch})
-                res = res if isinstance(res, dict) else {}
-                saved = res.get("upserted", len(batch))
-                n += saved
-                lost = {k: res[k] for k in ("skipped", "rejected", "failed_batches") if res.get(k)}
-                if lost or saved < len(batch):
-                    log.warning("ingest %s: sent %d, saved %d, %s %s", source, len(batch), saved, lost, (res.get("errors") or [])[:3])
+                n += self._send_rows(source, group[i:i+chunk])
         return n
 
-    def update_fields(self, source, rows, chunk=400):
+    def update_fields(self, source, rows, chunk=50):
         """Send a few fields for rows that were already sent (e.g. weather after the main send). Skips normalize():
         its defaults (split_venue=False, is_league=False, ...) would overwrite real values. The app never overwrites
         with null, so only the fields present here change. Each row needs source, source_event_id and name."""
         n = 0
         for i in range(0, len(rows), chunk):
             batch = [{**r, "dedupe_key": f"{r['source']}:{r['source_event_id']}"} for r in rows[i:i+chunk]]
-            res = self._post({"source": source, "rows": batch})
-            res = res if isinstance(res, dict) else {}
-            saved = res.get("upserted", len(batch))
-            n += saved
-            if saved < len(batch):
-                log.warning("ingest %s (field update): sent %d, saved %d %s", source, len(batch), saved, (res.get("errors") or [])[:3])
+            n += self._send_rows(source, batch)
         return n
 
     def log_run(self, source, rows_seen, rows_upserted, errors, started, note=""):
