@@ -70,6 +70,7 @@ games, fields[], field_count, schedule[]}), `fields_used`, `teams_per_field`,
 | mayouthsoccer | state association HTML page; tournaments are table columns, parsed directly (no Claude, no key). Each "Tournament Website" link is fetched once; failures/error pages record `raw.website_info = "NO INFO AVAILABLE"` | site has a broken cert chain (verify=False for that host); dates may carry ordinals ("11th") |
 | fairsandfestivals | 50 state pages, plain HTML; detail pages for dates/address/attendance; fees/contacts are paid-member fields (FF_COOKIE secret unlocks) | throttles after bursts; 2 workers, retry a blank state once |
 | eventeny | national feed `eventeny.com/events/?page=N` (~1,000 events; the `?state=` filter only applies to page 1, so don't loop states); JSON-LD on each event page gives start/end/location/organizer; vendor page gives fees/deadline/rain date | 3 workers |
+| organizers.find | who runs an event series + their website. Stages, cheapest first: stored listings (app's saved listings incl. past ones) → Tourney Machine live search → event PDFs (hints only) → Claude web research (paid). Listing stages prove the match with `event_match` (never name alone); web/PDF/model answers must pass `verify()` (we fetch the page and it must name the event AND its town/venue). Status: found_verified / needs_review / not_found | accuracy: `tools/eval_find_organizer.py` vs `tests/fixtures/find_organizer_truth.json` (38 real events); `organizers-eval.yml` runs it in Actions and writes summaries to branch `eval-results`. Replaced organizer_discovery.py (Oct 2026) |
 | woodgoods_lacrosse | wraps 14 organizer-site scrapers in `adapters/` + `core/` (NXT, MLT, APEX, Trilogy, Victory, PrimeTime, Adrenaline, Aloha, Alliance, Buku, Hogan's, ML8, NLF, PLL). Sources `wg-<org>` | 205 rows/zero errors on 2026-10-06; Alliance returned 0 — check. Rarely have team counts |
 
 Secrets (GitHub → Settings → Secrets → Actions): `INGEST_URL`, `INGEST_KEY`, `ANTHROPIC_API_KEY`
@@ -77,6 +78,8 @@ Secrets (GitHub → Settings → Secrets → Actions): `INGEST_URL`, `INGEST_KEY
 collectors whose required key is missing.
 
 ## Workflows
+
+- `organizers-eval.yml`: manual or on push to `eval/find-organizer`; measures Find Organizer accuracy and cost.
 
 - `weekly.yml`: Mon 06:00 UTC, matrix over the five sources, fail-fast off, 170-min timeout each.
 - `backfill.yml`: manual. Inputs start/end/shard_size. Plan job builds the matrix newest-first.
