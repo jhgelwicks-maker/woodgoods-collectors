@@ -1,0 +1,4 @@
+{
+  "_about": "Public websites of lacrosse organizers without a dedicated scraper, keyed by the organizer name as Tourney Machine shows it. Add one per line as they are found (by hand or from Find Organizer). Names and websites only: never emails, phones or other contacts (this repo is public).",
+  "_example": "Big Dog Lacrosse: https://www.example.org/"
+}

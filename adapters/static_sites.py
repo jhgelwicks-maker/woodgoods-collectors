@@ -3,7 +3,7 @@
 These are the cheap, high-yield sources. Verified against live markup.
 """
 from __future__ import annotations
-import re
+import re, datetime
 from core.base import BaseCollector
 from core.model import Event, parse_date_range, split_city_state, normalize_gender
 
@@ -21,14 +21,31 @@ class MLTCollector(BaseCollector):
     organizer = "MLT"
     tier = 1
     URL = "https://mylacrossetournaments.com/events/"
+    # /events/ leaves out showcases and some regional events; each listing below has its own cards
+    PAGES = [URL, URL + "showcase/", URL + "girls/", URL + "east/", URL + "south/", URL + "west/"]
 
     def collect(self):
-        soup = self.soup(self.URL)
+        out, seen = [], set()
+        for url in self.PAGES:
+            try:
+                soup = self.soup(url)
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{self.slug} {url}: {e}")
+                continue
+            out += self._cards(soup, seen)
+        return out
+
+    def _cards(self, soup, seen):
         out = []
         for card in soup.select(".rb-event-card"):
             name = self.txt(card.select_one(".rb-event-title"))
             if not name:
                 continue
+            link = card.select_one("a[href]")
+            key = link["href"] if link else name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
             items = [self.txt(d) for d in card.select(".rb-event-details .rb-detail-item")]
             items += [None] * (4 - len(items))
             raw_date, loc, gender_s, divisions = items[:4]
@@ -36,7 +53,6 @@ class MLTCollector(BaseCollector):
             start, end = parse_date_range(raw_date)
             venue, state = split_city_state(loc)
             badge = (self.txt(card.select_one(".rb-event-badge")) or "").lower()
-            link = card.select_one("a[href]")
 
             out.append(Event(
                 organizer=self.organizer,
@@ -52,14 +68,19 @@ class MLTCollector(BaseCollector):
 
 
 class ApexCollector(BaseCollector):
-    """APEX Lacrosse Events. Gender is segregated by URL path, so it's free."""
+    """APEX Lacrosse Events. Gender is segregated by URL path, so it's free.
+    Each page lists upcoming events, then a 'Past Events' heading; stop there."""
     slug = "apex"
     organizer = "APEX"
     tier = 1
     PAGES = [
         ("https://apexlacrosseevents.com/boys-tournaments/", "boys", "tournament"),
         ("https://apexlacrosseevents.com/boys-showcases/",   "boys", "showcase"),
+        ("https://apexlacrosseevents.com/girls-tournaments/", "girls", "tournament"),
+        ("https://apexlacrosseevents.com/girls-showcases/",   "girls", "showcase"),
     ]
+    STREET = re.compile(r"^.*\b(?:rd|road|ln|lane|st|street|ave|avenue|blvd|dr|drive|hwy|highway|pike|way|"
+                        r"ct|court|pl|place|pkwy|parkway|area|grounds)\b\.?\s+", re.I)
     DATE_RE = re.compile(
         r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}"
         r"(?:\s*(?:-|–|&|/|and|to)\s*(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)"
@@ -75,6 +96,8 @@ class ApexCollector(BaseCollector):
                 continue
             for h in soup.select("h1, h2, h3, h4"):
                 name = self.txt(h)
+                if name and name.strip().lower() == "past events":
+                    break
                 if not name or len(name) > 120:
                     continue
                 block = []
@@ -89,7 +112,7 @@ class ApexCollector(BaseCollector):
                 if not m:
                     continue
                 raw = m.group(1)
-                start, end = parse_date_range(raw, default_year=2026)
+                start, end = parse_date_range(raw, default_year=datetime.date.today().year)
                 if not start:
                     continue
                 city, state = self._location(blob)
@@ -101,10 +124,12 @@ class ApexCollector(BaseCollector):
                 ))
         return self._dedupe(out)
 
-    @staticmethod
-    def _location(blob):
+    @classmethod
+    def _location(cls, blob):
         m = re.search(r"([A-Z][A-Za-z .'-]+),\s*([A-Z]{2})\b", blob)
-        return (m.group(1).strip(), m.group(2)) if m else (None, None)
+        if not m:
+            return None, None
+        return cls.STREET.sub("", m.group(1).strip()).strip() or None, m.group(2)
 
     @staticmethod
     def _dedupe(events):
@@ -128,15 +153,26 @@ class BukuCollector(BaseCollector):
     organizer = "Buku"
     tier = 1
     URL = "https://www.buku.events/tournaments"
+    PAGES = [URL, "https://www.buku.events/showcases"]      # showcases are only on their own page
     DATE_RE = re.compile(
         r"^(January|February|March|April|May|June|July|August|September|October|"
         r"November|December)\s+\d{1,2}\s*(?:[-\u2013]\s*\d{1,2})?\s*,\s*20\d{2}$", re.I)
     CITY_RE = re.compile(r"^[A-Z][A-Za-z .'-]+,\s*[A-Z]{2}$")
 
     def collect(self):
-        lines = [l.strip() for l in
-                 self.soup(self.URL).get_text("\n", strip=True).split("\n") if l.strip()]
         out, seen = [], set()
+        for url in self.PAGES:
+            try:
+                lines = [l.strip() for l in
+                         self.soup(url).get_text("\n", strip=True).split("\n") if l.strip()]
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{self.slug} {url}: {e}")
+                continue
+            out += self._events(lines, url, seen)
+        return out
+
+    def _events(self, lines, url, seen):
+        out = []
         for i, line in enumerate(lines):
             if not self.DATE_RE.match(line):
                 continue
@@ -165,7 +201,7 @@ class BukuCollector(BaseCollector):
                 city=c, state=st,
                 gender=normalize_gender(name),
                 event_type="showcase" if "showcase" in name.lower() else "tournament",
-                source_url=self.URL,
+                source_url=url,
             ))
         return out
 

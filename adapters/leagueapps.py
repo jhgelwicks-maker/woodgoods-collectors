@@ -10,13 +10,17 @@ The *marketing* site is often JS-gated and useless to a fetcher
 serves full server-rendered detail: name, dates, venue, street address,
 divisions and team pricing.
 
-Two modes:
-  known_ids  - fast, exact. Use the IDs you already have.
+Three ways to get event IDs (combined, feed first):
+  feed       - the marketing site's own event list, /api/program (what its JS
+               events page loads). Finds every listed event, including ones
+               added since the IDs below were typed in. Needs the site's
+               affiliation id(s), read once from a browser network capture.
+  known_ids  - fast, exact. Fallback if the feed is down.
   scan       - probe an ID range to discover new events. Slower and
                noisier; run it monthly, not weekly.
 """
 from __future__ import annotations
-import re
+import re, json, datetime
 from core.base import BaseCollector, FetchError
 from core.model import Event, parse_date_range, split_city_state, normalize_gender
 
@@ -31,6 +35,15 @@ ADDR_RE = re.compile(
     r"[, ]+[A-Z][A-Za-z .'-]+,?\s*[A-Z]{2}\s*\d{5}?)")
 
 CITYST_RE = re.compile(r"([A-Z][A-Za-z .'-]+),\s*([A-Z]{2})\b")
+US_STATE = {n.lower(): a for a, n in {
+    "AL": "Alabama", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+    "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+    "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan",
+    "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire",
+    "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee",
+    "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin",
+    "WY": "Wyoming"}.items()}
 
 
 class LeagueAppsCollector(BaseCollector):
@@ -41,26 +54,92 @@ class LeagueAppsCollector(BaseCollector):
     known_ids: list[int] = []
     scan_range: tuple[int, int] | None = None
     default_gender: str = "unknown"
+    feed_site: str = ""                 # e.g. https://www.nxtsports.com (serves /api/program)
+    feed_affiliations: list[int] = []   # affiliationIds the site's events page sends
+    feed_current: int | None = None     # currentAffiliationId
+    feed_types = {"Tournament", "Showcase"}   # skip clubs, clinics, leagues, training
 
     def event_url(self, eid):
         return f"{self.host}/site/register/register.aspx?EventID={eid}"
 
+    def feed_ids(self):
+        """Event IDs of upcoming tournaments/showcases from the site's /api/program list; [] if no feed or it fails."""
+        if not (self.feed_site and self.feed_affiliations):
+            return []
+        params = {"affiliationIds": json.dumps(self.feed_affiliations, separators=(",", ":")),
+                  "currentAffiliationId": self.feed_current or self.feed_affiliations[0]}
+        try:
+            r = self.session.get(f"{self.feed_site}/api/program", params=params, timeout=30,
+                                 headers={"Accept": "application/json, text/plain, */*"})
+            programs = r.json().get("programs", []) if r.status_code == 200 else []
+        except Exception as e:  # noqa: BLE001
+            self.errors.append(f"{self.slug} feed: {e}")
+            return []
+        today = datetime.date.today().isoformat()
+        keep = [p for p in programs
+                if p.get("typeName") in self.feed_types and (p.get("end") or p.get("start") or "")[:10] >= today and p.get("id")]
+        self.feed_programs = {p["id"]: p for p in keep}
+        ids = list(self.feed_programs)
+        if not ids:
+            self.errors.append(f"{self.slug} feed returned no upcoming events (status {r.status_code})")
+        return ids
+
     def collect(self):
-        ids = list(self.known_ids)
+        ids = list(dict.fromkeys(self.feed_ids() + list(self.known_ids)))
         if self.scan_range:
-            ids += [i for i in range(*self.scan_range) if i not in set(ids)]
+            seen = set(ids)
+            ids += [i for i in range(*self.scan_range) if i not in seen]
         out = []
         for eid in ids:
             try:
                 ev = self.parse_event(eid)
             except FetchError:
-                continue
+                ev = self._event_from_feed(eid)
             except Exception as e:  # noqa: BLE001
-                self.errors.append(f"{self.slug}#{eid}: {e}")
-                continue
+                ev = self._event_from_feed(eid)          # the page didn't parse, but the feed still knows the event
+                if not ev:
+                    self.errors.append(f"{self.slug}#{eid}: {e}")
+                    continue
+            if ev is None:
+                ev = self._event_from_feed(eid)
             if ev:
+                self._fill_from_feed(ev, eid)
                 out.append(ev)
         return out
+
+    def _event_from_feed(self, eid):
+        """An Event from the feed alone (name, dates, venue, city/state) when the event page can't be read."""
+        p = getattr(self, "feed_programs", {}).get(eid)
+        if not p:
+            return None
+        def d(x):
+            try: return datetime.date.fromisoformat((x or "")[:10])
+            except ValueError: return None
+        name = re.sub(r"^20\d{2}\s+", "", p.get("listName") or p.get("name") or "").strip()
+        if not name or not d(p.get("start")):
+            return None
+        ev = Event(organizer=self.organizer, name=name, start_date=d(p.get("start")), end_date=d(p.get("end")) or d(p.get("start")),
+                   raw_date=p.get("dateString") or "", source_url=self.event_url(eid),
+                   event_type="showcase" if p.get("typeName") == "Showcase" else "tournament")
+        self._fill_from_feed(ev, eid)
+        return ev
+
+    def _fill_from_feed(self, ev, eid):
+        """The feed knows city, state, venue and boys/girls even when the event page's header doesn't say."""
+        p = getattr(self, "feed_programs", {}).get(eid)
+        if not p:
+            return
+        if not ev.venue and p.get("locationName") and p["locationName"].lower() != "multiple locations":
+            ev.venue = p["locationName"]
+        if not ev.city and p.get("city"):
+            ev.city = p["city"]
+        if not ev.state and p.get("state"):
+            ev.state = US_STATE.get(p["state"].lower(), p["state"] if len(p["state"]) == 2 else None)
+            if ev.state:
+                ev.__post_init__()                 # recompute region/fingerprint with the state
+        if ev.gender in (None, "", "unknown") and p.get("genders"):
+            g = set(p["genders"])
+            ev.gender = "coed" if g == {True, False} else "boys" if g == {True} else "girls" if g == {False} else ev.gender
 
     def parse_event(self, eid):
         """LeagueApps renders a tight header block:
@@ -162,7 +241,10 @@ class NXTCollector(LeagueAppsCollector):
     slug = "nxt"
     organizer = "NXT"
     host = "https://events.nxtsports.com"
-    default_gender = "boys"
+    default_gender = "unknown"          # the feed brings girls events too; read gender from each event
+    feed_site = "https://www.nxtsports.com"
+    feed_affiliations = [127, 284]
+    feed_current = 284
     known_ids = [
         19031,  # The Circuit Session I
         19660,  # Harvest Classic
@@ -190,6 +272,8 @@ class AlohaCollector(LeagueAppsCollector):
     organizer = "Aloha"
     host = "https://www.alohatournaments.com"
     tier = 2
+    feed_site = "https://www.alohatournaments.com"
+    feed_affiliations = [121]
     known_ids = [18264, 18287, 18285, 20759]
 
 

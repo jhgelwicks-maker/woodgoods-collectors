@@ -1,6 +1,7 @@
 """Tier 1-2 collectors for the remaining organizers."""
 from __future__ import annotations
-import re
+import re, time, datetime, urllib.parse
+from bs4 import BeautifulSoup
 from core.base import BaseCollector
 from core.model import Event, parse_date_range, split_city_state, normalize_gender
 
@@ -24,7 +25,8 @@ class TrilogyCollector(BaseCollector):
     URL = "https://trilogylacrosse.com/tournaments/"
     LINK_RE = re.compile(
         r"^(?P<name>.+?)\s+(?P<date>(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)"
-        r"[A-Za-z]*\.?\s+\d{1,2}.*?20\d{2})\s*\|\s*(?P<state>[A-Z]{2})\s*$", re.I)
+        r"[A-Za-z]*\.?\s+\d{1,2}.*?20\d{2})\s*\|\s*(?P<state>[A-Z]{2})"
+        r"(?:\s*\|\s*(?P<gender>BOYS|GIRLS|COED))?\s*$", re.I)     # camps/showcases add '| BOYS' 
 
     def collect(self):
         soup = self.soup(self.URL)
@@ -42,7 +44,9 @@ class TrilogyCollector(BaseCollector):
             if key in seen:
                 continue
             seen.add(key)
-            gender = self._gender_from_menu(a)
+            gender = normalize_gender(m.group("gender") or name)       # '| GIRLS' or 'Girls Winter Indoor League'
+            if gender == "unknown":
+                gender = self._gender_from_menu(a)
             out.append(Event(
                 organizer=self.organizer,
                 name=name.title() if name.isupper() else name,
@@ -76,53 +80,72 @@ class TrilogyCollector(BaseCollector):
 
 
 class VictoryCollector(BaseCollector):
-    """Victory Event Series. Homepage 'upcoming events' block is clean:
+    """Victory Event Series. Event lists are clean line runs:
         'October 24 & 25, 2026' / 'VICTORY FALL CLASSIC' / 'Frederica, DE'
+    The homepage shows only the next few, in a different name-then-date layout; /boys/, /girls/
+    and /showcases/ list everything (showcase dates carry a weekday: 'Friday, June 18, 2027').
+    An event on both the boys and girls pages is coed.
     """
     slug = "victory"
     organizer = "Victory"
     tier = 1
     URL = "https://victoryeventseries.com/"
+    PAGES = [(URL + "boys/", "boys"), (URL + "girls/", "girls"), (URL + "showcases/", None)]
     DATE_LINE = re.compile(
-        r"^(January|February|March|April|May|June|July|August|September|October|"
+        r"^(?:(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day,?\s+)?"
+        r"(January|February|March|April|May|June|July|August|September|October|"
         r"November|December)\s+\d{1,2}\s*(?:[-\u2013&]\s*(?:[A-Z][a-z]+\s+)?\d{1,2})?,?\s*20\d{2}$",
         re.I)
     CITY_LINE = re.compile(r"^[A-Z][A-Za-z .'-]+,\s*[A-Z]{2}$")
+    NOT_NAME = re.compile(r"^(learn more|view event|register|details)$", re.I)
 
     def collect(self):
-        lines = [re.sub(r"\s+", " ", l).strip() for l in
-                 self.soup(self.URL).get_text("\n", strip=True).split("\n") if l.strip()]
-        out, seen = [], set()
-        for i, line in enumerate(lines):
-            if not self.DATE_LINE.match(line):
+        found = {}
+        for url, page_gender in self.PAGES:
+            try:
+                lines = [re.sub(r"\s+", " ", l).strip() for l in
+                         self.soup(url).get_text("\n", strip=True).split("\n") if l.strip()]
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{self.slug} {url}: {e}")
                 continue
-            start, end = parse_date_range(line)
-            if not start:
-                continue
-            name = city = None
-            for nxt in lines[i + 1: i + 6]:
-                if self.CITY_LINE.match(nxt):
-                    city = nxt
-                    break
-                if nxt.lower().startswith("view event") or self.DATE_LINE.match(nxt):
-                    break
-                if not name and 3 < len(nxt) < 70:
-                    name = nxt
-            if not name:
-                continue
-            c, st = split_city_state(city)
-            key = (name.lower(), start)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(Event(
-                organizer=self.organizer,
-                name=name.title() if name.isupper() else name,
-                start_date=start, end_date=end, raw_date=line,
-                city=c, state=st, gender=normalize_gender(name),
-                source_url=self.URL,
-            ))
-        return out
+            for i, line in enumerate(lines):
+                if not self.DATE_LINE.match(line):
+                    continue
+                start, end = parse_date_range(line)
+                if not start:
+                    continue
+                name = city = None
+                for nxt in lines[i + 1: i + 6]:
+                    if self.CITY_LINE.match(nxt):
+                        city = nxt
+                        break
+                    if nxt.lower().startswith("view event") or self.DATE_LINE.match(nxt):
+                        break
+                    if not name and 3 < len(nxt) < 70 and not self.NOT_NAME.match(nxt):
+                        name = nxt
+                if not name:
+                    continue
+                key = (name.lower(), start)
+                gender = normalize_gender(name)
+                if gender in (None, "", "unknown"):
+                    gender = page_gender or "unknown"
+                if key in found:
+                    ev = found[key]
+                    if page_gender and ev.gender not in (page_gender, "unknown", "coed"):
+                        ev.gender = "coed"
+                    elif ev.gender == "unknown":
+                        ev.gender = gender
+                    continue
+                c, st = split_city_state(city)
+                found[key] = Event(
+                    organizer=self.organizer,
+                    name=name.title() if name.isupper() else name,
+                    start_date=start, end_date=end, raw_date=line,
+                    city=c, state=st, gender=gender,
+                    event_type="showcase" if "showcase" in name.lower() or "showcases" in url else "tournament",
+                    source_url=url,
+                )
+        return list(found.values())
 
 
 class HoganCollector(BaseCollector):
@@ -243,7 +266,7 @@ class PrimeTimeCollector(BaseCollector):
     URL = "https://primetimelacrosse.com/events/"
     DATE_LINE = re.compile(
         r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?"
-        r"(?:\s*[/&-]\s*(?:[A-Z][a-z]+\.?\s*)?\d{1,2}(?:st|nd|rd|th)?)?,?\s*20\d{2}$", re.I)
+        r"(?:\s*[/&\u2013\u2014-]\s*(?:[A-Z][a-z]+\.?\s*)?\d{1,2}(?:st|nd|rd|th)?)?,?\s*20\d{2}$", re.I)
 
     def collect(self):
         lines = [re.sub(r"\s+", " ", l).strip() for l in
@@ -283,8 +306,9 @@ class PrimeTimeCollector(BaseCollector):
 class AdrenalineCollector(BaseCollector):
     """Adrenaline.
 
-    TRAP 1: /events/ paginates behind 'Load More'; month/category URL params
-            do NOT filter server-side. '?sort=' returns a fuller roster.
+    TRAP 1: /events/ paginates behind 'Load More' (8 cards a click); month/category URL params
+            do NOT filter server-side. The button POSTs admin-ajax action=load_more_events&page=N,
+            which we call ourselves (more_cards) so every page of cards is read.
     TRAP 2: their cards split the date across lines:
             'Nov' / '07' / 'Gold Cup' / '2027 - 2032' / 'Frederica, DE' / 'Boys Only'
     TRAP 3: hub pages (/western-cup/) carry qualifier calendars the index omits.
@@ -294,19 +318,85 @@ class AdrenalineCollector(BaseCollector):
     tier = 2
     URLS = ["https://adrln.com/events/?sort=", "https://www.adrln.com/western-cup/"]
     MON = re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$", re.I)
-    SEASON_YEAR = {"jan": 2027, "feb": 2027, "mar": 2027, "apr": 2027, "may": 2027,
-                   "jun": 2027, "jul": 2027, "aug": 2026, "sep": 2026, "oct": 2026,
-                   "nov": 2026, "dec": 2026}
+    MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
+
+    def season_year(self, mon, day=1):
+        """The index shows month + day only: the next occurrence from today (an event 2+ months back means next year).
+        Was a fixed Aug-Dec=2026 / Jan-Jul=2027 table, which would have dated next season a year off."""
+        today = datetime.date.today()
+        m = self.MONTHS.index(mon.lower()[:3]) + 1
+        try:
+            d = datetime.date(today.year, m, int(day))
+        except ValueError:
+            d = datetime.date(today.year, m, 1)
+        return today.year + 1 if d < today - datetime.timedelta(days=60) else today.year
+
+    def event_dates(self, url):
+        """The full range from an event's own page ('Date & Time November 7 - 8, 2026'); the index card shows day 1 only."""
+        try:
+            text = re.sub(r"\s+", " ", self.soup(url).get_text(" ", strip=True))
+        except Exception:  # noqa: BLE001
+            return None, None, None
+        i = text.find("Date & Time")
+        m = DATE_INLINE.search(text, i if i >= 0 else 0) or DATE_INLINE.search(text)
+        if not m:
+            return None, None, None
+        s, e = parse_date_range(m.group(1))
+        return s, e, m.group(1)
+
+    GENERIC = set("the a of and fall spring summer winter lacrosse lax tournament showcase classic cup clinic high school boys girls".split())
+
+    def page_by_words(self, name, pages):
+        """'Final Say: Fall High School Lacrosse' -> '/events/the-final-say-fall/': two distinctive words in common."""
+        words = {w for w in re.findall(r"[a-z0-9]+", name.lower()) if w not in self.GENERIC}
+        best = None
+        for h in set(pages.values()):
+            slug = {w for w in re.split(r"[-_]", h.rstrip("/").rsplit("/", 1)[-1]) if w not in self.GENERIC}
+            n = len(words & slug)
+            if n >= 2 and (best is None or n > best[0]): best = (n, h)
+        return best[1] if best else None
+
+    AJAX = "https://www.adrln.com/wp-admin/admin-ajax.php"
+
+    def more_cards(self, html):
+        """The cards hidden behind 'Load More': same markup as the index, fetched page by page until one comes back empty."""
+        m = re.search(r'class="load-more-btn"[^>]*data-max-pages="(\d+)"', html)
+        if not m:
+            return ""
+        ids, extra = re.findall(r'data-post-id="(\d+)"', html), []
+        for page in range(1, min(int(m.group(1)), 20) + 1):
+            try:
+                r = self.session.post(self.AJAX, data={"action": "load_more_events", "page": page, "search": "",
+                                                      "catSearch": "", "exclude[]": ids}, timeout=30)
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{self.slug} load more page {page}: {e}")
+                break
+            new = re.findall(r'data-post-id="(\d+)"', r.text) if r.status_code == 200 else []
+            if not new:
+                break
+            ids += new
+            extra.append(r.text)
+            time.sleep(1.0)
+        return "".join(extra)
 
     def collect(self):
         out, seen = [], set()
         for url in self.URLS:
             try:
+                html = self.get(url)
+                soup = BeautifulSoup(html + self.more_cards(html), "lxml")
                 lines = [re.sub(r"\s+", " ", l).strip() for l in
-                         self.soup(url).get_text("\n", strip=True).split("\n") if l.strip()]
+                         soup.get_text("\n", strip=True).split("\n") if l.strip()]
             except Exception as e:  # noqa: BLE001
                 self.errors.append(f"{self.slug} {url}: {e}")
                 continue
+            # card name -> its event page ('/events/gold-cup/'), for the full date range
+            pages = {}
+            for a in soup.find_all("a", href=True):
+                h = urllib.parse.urljoin(url, a["href"]).split("?")[0]      # cards often use relative links
+                if re.search(r"adrln\.com/events/[^/]+/?$", h) and not h.rstrip("/").endswith("/events"):
+                    pages.setdefault(re.sub(r"[^a-z0-9]+", "", a.get_text(" ", strip=True).lower()), h)
+                    pages.setdefault(re.sub(r"[-_]", "", h.rstrip("/").rsplit("/", 1)[-1]), h)
 
             for i, line in enumerate(lines):
                 if not self.MON.match(line):
@@ -322,11 +412,19 @@ class AdrenalineCollector(BaseCollector):
                 # '2027 - 2032' strings are DIVISION grad years, not event
                 # years. The index only ever shows the current season, so
                 # derive the year from the month instead.
-                yr = self.SEASON_YEAR[mon.lower()[:3]]
+                yr = self.season_year(mon, day)
                 raw = f"{mon} {day}, {yr}"
                 start, end = parse_date_range(raw)
                 if not start:
                     continue
+                key_name = re.sub(r"[^a-z0-9]+", "", name.lower())
+                page = (pages.get(key_name) or next((h for k, h in pages.items() if k and (k in key_name or key_name in k)), None)
+                        or self.page_by_words(name, pages))
+                src = url
+                if page:
+                    s2, e2, raw2 = self.event_dates(page)
+                    if s2 and abs((s2 - start).days) <= 7:      # same event: trust its own page's full range
+                        start, end, raw, src = s2, e2 or s2, raw2, page
                 loc = next((w for w in win if re.search(r",\s*[A-Z]{2}\b", w)), None)
                 city, state = split_city_state(loc)
                 gender = normalize_gender(" ".join(win))
@@ -340,7 +438,7 @@ class AdrenalineCollector(BaseCollector):
                     city=city, state=state, gender=gender,
                     age_range=next((w for w in win if re.fullmatch(r"20\d{2}\s*-\s*20\d{2}", w)), None),
                     event_type="showcase" if "showcase" in name.lower() else "tournament",
-                    source_url=url,
+                    source_url=src,
                 ))
 
             # hub-page qualifier tables: 'Oct 17 | Santa Barbara Showdown | SB, CA'
@@ -350,7 +448,7 @@ class AdrenalineCollector(BaseCollector):
                     r"(?P<d1>\d{1,2})(?:\s*[-\u2013]\s*(?P<d2>\d{1,2}))?\s*\n?"
                     r"(?P<name>[A-Z][A-Za-z0-9 .'&-]{4,50})", joined):
                 mon = m.group("mon")
-                yr = self.SEASON_YEAR[mon.lower()[:3]]
+                yr = self.season_year(mon, m.group("d1"))
                 raw = f"{mon} {m.group('d1')}" + (f"-{m.group('d2')}" if m.group("d2") else "") + f", {yr}"
                 start, end = parse_date_range(raw)
                 nm = m.group("name").strip()
@@ -358,6 +456,10 @@ class AdrenalineCollector(BaseCollector):
                     continue
                 key = (nm.lower(), start)
                 if key in seen:
+                    continue
+                # a schedule-table row repeating a card already found ("Final Say" vs "Final Say: Fall High School Lacrosse")
+                if any(abs((e.start_date - start).days) <= 3 and (e.name.lower().startswith(nm.lower()) or nm.lower().startswith(e.name.lower()))
+                       for e in out):
                     continue
                 seen.add(key)
                 out.append(Event(
