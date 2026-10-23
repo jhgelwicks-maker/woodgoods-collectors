@@ -12,9 +12,54 @@ These sources complement Tourney Machine rather than duplicate it:
 Both land on the same `event_site_key`, so the ingest layer reconciles them
 into one row per booking instead of two rows side by side.
 """
-import re, datetime, logging
+import re, datetime, logging, dataclasses
 from . import common
 from .common import log
+
+FACILITY = re.compile(r"\b(park|parks|complex|fields?|center|centre|\w*plex|stadium|university|college|academy|school|hs|club|"
+                      r"grounds|arena|farm|sports|athletic|athletics|recreation|turf|dome|campus|commons|kp|fieldhouse)\b", re.I)
+SITE_SUFFIX = re.compile(r"\s+–\s+Site \d+$")
+
+
+def split_venues(venue):
+    """'Farmingdale State College & Destination KP' -> two venues. Pieces that are not a venue on their own are joined
+    back: 'SUSA Orlin & Cohen Sports Complex', 'Iron Peak Sports & Events' and 'North Myrtle Beach Park and Sports
+    Complex' are one venue each, 'DE and PA' is not a venue list. 'Multiple Locations' / TBD cannot be split (the organizer doesn't say where)."""
+    if not venue or re.search(r"multiple locations|\btbd\b|\btbc\b", venue, re.I):
+        return [venue] if venue else []
+    pieces = [p.strip(" ,") for p in re.split(r"\s+(?:&|and|\+)\s+|\s*/\s*", venue) if p.strip(" ,")]
+    out = []
+    for p in pieces:
+        generic = all(FACILITY.fullmatch(w) or w.lower() in ("and", "of", "the", "community", "county", "regional")
+                      for w in p.split())                          # 'Sports Complex', 'Community College'
+        if out and (not FACILITY.search(out[-1]) or len(p.split()) == 1 or generic):
+            out[-1] = f"{out[-1]} & {p}"
+        else:
+            out.append(p)
+    return out if len(out) > 1 else [venue]
+
+
+def expand_sites(ev):
+    """One Event per venue: 'Lax Fest – Site 1' at Farmingdale State College, 'Lax Fest – Site 2' at Destination KP,
+    each with its own venue and town (the same '– Site N' naming as the app's manual sheet)."""
+    if len(ev.sites) > 1:
+        # a listed site can itself name two venues in one town ('Brown University / Moses Brown School Providence, RI')
+        sites = [(vv, c, st or ev.state) for v, c, st in ev.sites for vv in (split_venues(v) or [v])]
+    else:
+        names = split_venues(ev.venue)
+        if len(names) < 2:
+            return [ev]
+        sites = []
+        for n in names:
+            v, st = common_split(n)
+            sites.append((v, ev.city, st or ev.state))
+    return [dataclasses.replace(ev, name=f"{ev.name} – Site {k}", venue=v, city=c, state=st, sites=[])
+            for k, (v, c, st) in enumerate(sites, 1)]
+
+
+def common_split(text):
+    from core.model import split_city_state
+    return split_city_state(text) if "," in (text or "") else (text, None)
 
 # The organizer scrapers live in the `collectors` package shipped alongside
 # this one. Import lazily so this module can be inspected without them.
@@ -44,7 +89,8 @@ def to_common(ev, collector_slug):
     elif ev.state:
         city_state = f"{ev.venue or ''}, {ev.state}".strip(", ")
 
-    ident = _slug(f"{ev.name}-{ev.start_date}-{ev.venue or ev.city or ''}")
+    # name without '– Site N' + venue: a site keeps its id when the organizer reorders its locations
+    ident = _slug(f"{SITE_SUFFIX.sub('', ev.name)}-{ev.start_date}-{ev.venue or ev.city or ''}")
 
     return {
         "source": f"wg-{collector_slug}",
@@ -66,7 +112,7 @@ def to_common(ev, collector_slug):
         "official_url": ev.source_url,
         "raw": {"gender": ev.gender, "event_type": ev.event_type,
                 "raw_date": ev.raw_date, "collector": collector_slug,
-                "college_coaches": ev.college_coaches},
+                "college_coaches": ev.college_coaches, "date_note": ev.date_note},
     }
 
 
@@ -78,7 +124,9 @@ def collect(only=None):
         c = cls()
         evs = c.run()
         errors += len(c.errors)
+        n = len(rows)
         for ev in evs:
-            rows.append(to_common(ev, c.slug))
-        log.info("wg-%s: %d rows", c.slug, len(evs))
+            for site in expand_sites(ev):        # a two-venue event is two rows, one per site
+                rows.append(to_common(site, c.slug))
+        log.info("wg-%s: %d events, %d rows", c.slug, len(evs), len(rows) - n)
     return rows, errors

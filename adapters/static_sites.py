@@ -16,6 +16,9 @@ class MLTCollector(BaseCollector):
               .rb-event-title   -> name
               .rb-event-details > .rb-detail-item x4
                    [0] date   [1] 'Venue, ST'   [2] gender   [3] divisions
+    These pages list upcoming events only, so a card dated in the past carries a
+    mistyped year (Carolina Box Championship 'February 6th-7th, 2026' on the
+    2026-27 slate): it is read as the next year and the row says so in date_note.
     """
     slug = "mlt"
     organizer = "MLT"
@@ -51,6 +54,7 @@ class MLTCollector(BaseCollector):
             raw_date, loc, gender_s, divisions = items[:4]
 
             start, end = parse_date_range(raw_date)
+            start, end, note = self._year_typo(start, end, raw_date)
             venue, state = split_city_state(loc)
             badge = (self.txt(card.select_one(".rb-event-badge")) or "").lower()
 
@@ -62,9 +66,28 @@ class MLTCollector(BaseCollector):
                 gender=normalize_gender(gender_s or ""),
                 age_range=divisions,
                 event_type="showcase" if "showcase" in badge else "tournament",
-                source_url=link["href"] if link else self.URL,
+                source_url=link["href"] if link else self.URL, date_note=note,
             ))
         return out
+
+    @staticmethod
+    def _year_typo(start, end, raw_date):
+        """A past date on an upcoming-only list -> the same dates a year later, with a note; anything that would still
+        be past a year on (a stale or truly old card) is left alone."""
+        today = datetime.date.today()
+        if not start or (end or start) >= today - datetime.timedelta(days=3):
+            return start, end, None
+
+        def plus_year(d):
+            try:
+                return d.replace(year=d.year + 1)
+            except ValueError:                       # Feb 29
+                return d + datetime.timedelta(days=365)
+        s2, e2 = plus_year(start), plus_year(end or start)
+        if e2 < today:
+            return start, end, None
+        return s2, e2, (f"site prints '{raw_date}' on its upcoming-events list; read as {s2.year} "
+                        f"(year looks mistyped, confirm with the organizer)")
 
 
 class ApexCollector(BaseCollector):
@@ -100,14 +123,20 @@ class ApexCollector(BaseCollector):
                     break
                 if not name or len(name) > 120:
                     continue
-                block = []
-                for sib in h.find_all_next(limit=8):
+                if re.fullmatch(r"(?i)(?:boys|girls)?\s*(?:showcases?|tournaments?|events?)", name.strip()):
+                    continue                            # a section heading ('Boys Showcases'), not an event
+                # everything up to the next heading; class-year badges ('2030' '2029' '2028') used to push the location
+                # past an 8-element window, so the events with the most age groups lost their place
+                block, loc_text = [], None
+                for sib in h.find_all_next(limit=40):
                     if sib.name in ("h1", "h2", "h3", "h4"):
                         break
+                    if loc_text is None and "location" in (sib.get("class") or []):
+                        loc_text = self.txt(sib)        # 'University of Delaware 631 S College Ave Newark, DE 19716'
                     t = self.txt(sib)
                     if t:
                         block.append(t)
-                blob = " ".join(block)[:600]
+                blob = " ".join(block)[:1500]
                 m = self.DATE_RE.search(blob) or self.DATE_RE.search(name)
                 if not m:
                     continue
@@ -115,11 +144,16 @@ class ApexCollector(BaseCollector):
                 start, end = parse_date_range(raw, default_year=datetime.date.today().year)
                 if not start:
                     continue
-                city, state = self._location(blob)
+                venue = None
+                if loc_text:
+                    from adapters.misc_sites import place_from_text
+                    venue, city, state = place_from_text(loc_text)
+                if not loc_text or not state:
+                    venue, (city, state) = None, self._location(blob)
                 out.append(Event(
                     organizer=self.organizer, name=name,
                     start_date=start, end_date=end, raw_date=raw,
-                    city=city, state=state, gender=gender,
+                    venue=venue, city=city, state=state, gender=gender,
                     event_type=etype, source_url=url,
                 ))
         return self._dedupe(out)
@@ -160,7 +194,7 @@ class BukuCollector(BaseCollector):
     CITY_RE = re.compile(r"^[A-Z][A-Za-z .'-]+,\s*[A-Z]{2}$")
 
     def collect(self):
-        out, seen = [], set()
+        out, seen, self._links = [], set(), {}
         for url in self.PAGES:
             try:
                 lines = [l.strip() for l in
@@ -195,13 +229,19 @@ class BukuCollector(BaseCollector):
             if key in seen:
                 continue
             seen.add(key)
+            # the venue is on the event's page: 'Venue & Location Santa Barbara Polo Club 3300 Via Real, Carpinteria, CA'
+            from adapters.misc_sites import best_link, page_text, venue_from_page, site_links, merge_page_place
+            page = best_link(name, self._links.setdefault(url, site_links(self, url, r"buku\.events/[a-z0-9-]+/?(\?|$)")))
+            venue = None
+            if page:
+                venue, c, st = merge_page_place(c, st, venue_from_page(page_text(self, page)))
             out.append(Event(
-                organizer=self.organizer, name=name,
+                organizer=self.organizer, name=name, venue=venue,
                 start_date=start, end_date=end, raw_date=line,
                 city=c, state=st,
                 gender=normalize_gender(name),
                 event_type="showcase" if "showcase" in name.lower() else "tournament",
-                source_url=url,
+                source_url=page or url,
             ))
         return out
 
@@ -223,8 +263,30 @@ class PLLPlayCollector(BaseCollector):
         r"OCTOBER|NOVEMBER|DECEMBER)\s+\d{1,2}\s*(?:[-\u2013]\s*(?:[A-Z]+\s+)?\d{1,2})?"
         r",?\s*20\d{2})\s*\|\s*(?P<loc>.+)$", re.I)
 
+    @staticmethod
+    def page_sites(text):
+        """[(venue, city, state), ...] from a pllplay.com page: 'Location Riverview Sports Park Address 12200 Joerger Drive,
+        Truckee, CA 96145 ... Location Truckee High School Address ...', else 'Arvada, CO: Stenger Soccer Complex'."""
+        from collectors.organizers import extract as X
+        out = []
+        for m in re.finditer(r"\bLocation\s+(.{3,80}?)\s+Address\s+(.{5,140}?\b[A-Z]{2}\s+\d{5})", text or ""):
+            towns = X.find_city_states(m.group(2))
+            if towns:
+                c, st = towns[-1].rsplit(", ", 1)
+                out.append((m.group(1).strip(), c, st))
+        if not out:
+            m = re.search(r"\b([A-Z][A-Za-z .'-]+),\s*([A-Z]{2})\s*:\s*([A-Z][\w '&.-]{3,60}?)(?=\s+[A-Z][a-z]+\s+[a-z]|\s{2}|$)", text or "")
+            if m:
+                out.append((m.group(3).strip(), m.group(1).strip(), m.group(2)))
+        return out
+
     def collect(self):
-        raw = self.soup(self.URL).get_text("\n", strip=True).replace("\xa0", " ")
+        from adapters.misc_sites import best_link, page_text, merge_page_place
+        soup = self.soup(self.URL)
+        import urllib.parse
+        links = [urllib.parse.urljoin(self.URL, a["href"]) for a in soup.find_all("a", href=True)
+                 if "find out" in a.get_text(" ", strip=True).lower()]
+        raw = soup.get_text("\n", strip=True).replace("\xa0", " ")
         lines = [re.sub(r"\s+", " ", l).strip() for l in raw.split("\n") if l.strip()]
         out, seen = [], set()
         for i, line in enumerate(lines):
@@ -245,12 +307,20 @@ class PLLPlayCollector(BaseCollector):
             if key in seen:
                 continue
             seen.add(key)
+            page = best_link(name, links)
+            sites = self.page_sites(page_text(self, page)) if page else []
+            sites = [x for x in sites if x[2] == (state or x[2])]       # a page about somewhere else is ignored
+            venue = None
+            if len(sites) == 1:
+                venue, city, state = merge_page_place(city, state, sites[0])
+            elif sites:
+                venue = sites[0][0]                                   # several sites: each keeps its own town
             out.append(Event(
                 organizer=self.organizer, name=name.title() if name.isupper() else name,
                 start_date=start, end_date=end, raw_date=m.group("date"),
-                city=city, state=state,
+                venue=venue, city=city, state=state, sites=sites if len(sites) > 1 else [],
                 gender=normalize_gender(divisions),
                 age_range=divisions or None,
-                source_url=self.URL,
+                source_url=page or self.URL,
             ))
         return out

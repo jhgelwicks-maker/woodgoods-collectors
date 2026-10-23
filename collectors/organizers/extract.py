@@ -56,6 +56,7 @@ def _norm_date_text(s):
     s = WEEKDAY.sub("", s)
     s = ORDINAL.sub(r"\1", s)
     s = re.sub(r"(\d{1,2})\s+(20\d\d)\b", r"\1, \2", s)          # "January 10 2027" -> "January 10, 2027"
+    s = re.sub(r"(\d),(20\d\d)\b", r"\1, \2", s)                  # "May 30 - 31,2026" -> "May 30 - 31, 2026"
     return DASH.sub(" - ", s).replace(".", "")
 
 
@@ -107,14 +108,31 @@ def _city_only(words):
     drop web-ish tokens and leading label words."""
     w = re.split(r"\s+", words.strip())
     while w and LABEL_WORDS.match(w[0].strip(":")): w = w[1:]
-    # a street word ends the street part, except "St."/"Mt."/"Ft." opening the city name ("St. George", "Mt. Airy")
+    # a street word ends the street part, except "St."/"Mt."/"Ft." opening the city name ("St. George", "Mt. Airy"),
+    # also right after a facility ("Eastern University St. Davids")
     last = max((i for i, x in enumerate(w) if STREET_WORD.fullmatch(x)
-                and not (i == 0 and len(w) > 1 and re.fullmatch(r"(?i)(st|mt|ft)\.?", x))), default=-1)
+                and not ((i == 0 or FACILITY_WORD.fullmatch(w[i - 1])) and i < len(w) - 1 and re.fullmatch(r"(?i)(st|mt|ft)\.?", x))),
+               default=-1)
     w = [x for x in w[last + 1:] if ("." not in x.rstrip(".") or re.fullmatch(r"(?i)(st|ste|ft|mt|pt)\.", x))
          and not any(ch.isdigit() for ch in x)]
     fac = max((i for i, x in enumerate(w) if FACILITY_WORD.fullmatch(x)), default=-1)
     if 0 <= fac < len(w) - 1: w = w[fac + 1:]          # 'Bryant University Providence' -> 'Providence' ('College Park' stays)
     return " ".join(w)
+
+
+def city_state_spans(text):
+    """[(city, ST, start, end), ...] for every 'City, ST' in order, repeats kept ('Providence, RI' twice for two sites);
+    start is where the town's own words begin, so the text before it can be read as that site's venue."""
+    out = []
+    for m in CITY_ST.finditer(text or ""):
+        raw = re.sub(r"^(?:in|at|near|the|and|location|venue)\s+", "", m.group(1), flags=re.I)
+        city, st = _city_only(raw), _st(m.group(2))
+        if not st or len(city) < 3 or city.lower() in STATE_BY_NAME: continue
+        i = m.group(1).lower().rfind(city.lower())
+        start = m.start(1) + (i if i >= 0 else 0)
+        if city.isupper(): city = " ".join(x.capitalize() for x in city.lower().split())
+        out.append((city, st, start, m.end()))
+    return out
 
 
 def find_city_states(text):
@@ -134,7 +152,7 @@ def find_addresses(text):
     return list(dict.fromkeys(clean(m.group(0)).rstrip(".,") for m in ADDRESS.finditer(text or "")))
 
 
-FACILITY_WORD = re.compile(r"\b(park|parks|complex|fields?|center|centre|sportsplex|plex|stadium|university|college|academy|school|club|"
+FACILITY_WORD = re.compile(r"\b(park|parks|complex|fields?|center|centre|\w*plex|stadium|university|college|academy|school|club|"
                            r"grounds|nook|arena|farm|sports|athletic|athletics|recreation|rec|turf|dome|campus|commons|preserve|meadows)\b", re.I)
 
 

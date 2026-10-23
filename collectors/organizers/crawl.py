@@ -20,6 +20,7 @@ install chromium); --no-render turns that off. Without Playwright those sites si
 from __future__ import annotations
 import os, re, sys, json, time, argparse, pathlib, datetime as dt, urllib.parse
 from urllib import robotparser
+from collections import Counter
 
 import requests
 from bs4 import BeautifulSoup
@@ -52,7 +53,9 @@ def tidy_caps(s):
     return " ".join(w if i and w in small else (w.upper() if len(w) <= 2 and w.isalpha() else w.capitalize()) for i, w in enumerate(words))
 # rows that are page labels, not events ("Location:", "Attending College Coaches", "Dates")
 JUNK_NAME = re.compile(r"(:\s*$)|^(location|locations|dates?|when|where|venue|address|schedule|times?|cost|price|fees?|faq|contact|"
-                       r"(attending\s+)?college\s+coaches(\s+attending)?|coaches|sponsors?|directions|parking|hotels?|lodging)\b", re.I)
+                       r"(attending\s+)?college\s+coaches(\s+attending)?|coaches|sponsors?|directions|parking|hotels?|lodging)\b"
+                       # deadlines listed on an event page ("Balances Due", "Submit schedule requests by", "Player Waivers Complete")
+                       r"|\b(due|deadline)\b|^submit\b|\bwaivers?\s+(complete|due)|\bregistration\s+(opens|closes)|\brequests?\s+by\b", re.I)
 
 
 # a page heading, not an event, when it is the whole name ("Events", "Upcoming Events"); "Tournament of Champions" stays
@@ -248,6 +251,35 @@ def _detail_link(el, page_url):
     return None
 
 
+def _tidy_dom(soup):
+    """Read the page as a visitor sees it. Webflow keeps hidden copies of fields (class w-condition-invisible), and some
+    sites split a date into one element per piece ('June' / '21' / '&' / '2027'); drop the hidden copies and join the
+    pieces back into one date string so it can be found."""
+    for t in soup.find_all(class_="w-condition-invisible"):
+        if not getattr(t, "decomposed", False): t.decompose()
+    for el in soup.find_all(True):
+        if getattr(el, "decomposed", False): continue
+        kids = el.find_all(True, recursive=False)
+        if len(kids) < 3 or any(k.find(True) for k in kids): continue
+        parts = [p for p in (X.clean(k.get_text(" ", strip=True)) for k in kids) if p]
+        if not parts or any(len(p) > 12 for p in parts) or any(X.DATE_TEXT.search(p) for p in parts): continue
+        joined = re.sub(r"\s*&\s*(?=(?:19|20)\d\d\b)", " ", " ".join(parts))      # "December 5 & 2026": the 2nd day was blank
+        if X.DATE_TEXT.search(joined):
+            el.clear(); el.string = joined
+    return soup
+
+
+def child_pages(html, page_url):
+    """Links one level below a listing page ('/events/winter-events/' -> '/events/winter-events/nlf-futures/'): its event pages."""
+    base = urllib.parse.urlparse(page_url).path.rstrip("/") + "/"
+    out = []
+    for u, _ in links(html, page_url):
+        p = urllib.parse.urlparse(u)
+        rest = p.path[len(base):].strip("/") if p.path.startswith(base) else ""
+        if site_of(u) == site_of(page_url) and rest and "/" not in rest and not p.query: out.append(u.split("?")[0])
+    return list(dict.fromkeys(out))
+
+
 def event_blocks(html, page_url, today=None):
     """Upcoming events on a listing page: schema.org Events, else the smallest page blocks that carry a date and a title."""
     today = today or dt.date.today()
@@ -258,6 +290,7 @@ def event_blocks(html, page_url, today=None):
     if out: return out
     soup = BeautifulSoup(html or "", "lxml")
     for t in soup(["script", "style", "noscript", "svg", "header", "footer", "nav"]): t.decompose()
+    _tidy_dom(soup)
     chosen = []
     for node in soup.find_all(string=X.DATE_TEXT):
         el = node.parent
@@ -395,6 +428,7 @@ def crawl_organizer(org, fetch=None, today=None, ai_client=None, ai_model="claud
     raw = []
     can_render = getattr(fetch, "render", False)
     pages = list(dict.fromkeys((org.get("start_pages") or []) + [home] + found["events"][:6]))
+    followed = set()
     for page in pages:
         html = home_html if page == home else fetch.get(page)
         if not html: continue
@@ -411,11 +445,25 @@ def crawl_organizer(org, fetch=None, today=None, ai_client=None, ai_model="claud
             one = single_event(html, page, today)
             if one: blocks = [one]
         raw += blocks
+        # event pages to read on their own: every event's page when the listing shows only past dates (a stale listing,
+        # NLF's still shows last season), and pages one level below a listing that no block already points to
+        covered = {b.get("detail") for b in blocks} | set(pages)
+        follow = []
+        if blocks and all((b.get("end") or b["start"]) < today for b in blocks if b.get("start")):
+            follow = [b["detail"] for b in blocks if b.get("detail") and site_of(b["detail"]) == site_of(home)]
+            notes.append(f"listing shows only past dates, read its event pages: {page}")
+        if page != home:
+            follow += [u for u in child_pages(html, page) if u not in covered]
+        for u in list(dict.fromkeys(follow))[:15]:
+            if u in followed: continue
+            followed.add(u)
+            one = single_event(fetch.get(u) or "", u, today)
+            if one: raw.append(one)
     seen = {}                                       # (name, start) -> event; the same event on the homepage and a listing page merges
     for ev in raw:
         if not ev.get("start") or JUNK_NAME.search(ev.get("name") or ""): continue
         if (ev.get("end") or ev["start"]) < today - dt.timedelta(days=1) or ev["start"] > today + dt.timedelta(days=550): continue
-        key = (name_key(ev["name"]), ev["start"])
+        key = (name_key(ev["name"]).replace(" ", ""), ev["start"])      # "Main Stage" and "Mainstage" are one event
         if key in seen:
             keep = seen[key]
             if (ev.get("end") or ev["start"]) > (keep.get("end") or keep["start"]): keep["end"] = ev["end"]   # "Nov 14 / 15" beats "Nov 14"
@@ -443,6 +491,15 @@ def crawl_organizer(org, fetch=None, today=None, ai_client=None, ai_model="claud
                 ev["page"] = detail
     for ev in events:
         fields_from_text(ev)
+    # the organizer's own address (page footer) lands on every event: drop a city found on the homepage and on 80%+ of
+    # events, unless it is an event's only city (ML8's Miami office was every event's first city)
+    if len(events) >= 3:
+        home_cs = set(X.find_city_states(_text(BeautifulSoup(home_html, "lxml"))))
+        counts = Counter(c for ev in events for c in set(ev["city_states"]))
+        office = {c for c in home_cs if counts[c] >= 0.8 * len(events)}
+        for ev in events:
+            rest = [c for c in ev["city_states"] if c not in office]
+            if rest: ev["city_states"] = rest
 
     # organizer contacts: homepage + contact pages; vendor contact only when the organizer qualifies
     contact_html = [(home, home_html)] + [(u, fetch.get(u)) for u in found["contact"][:2]]

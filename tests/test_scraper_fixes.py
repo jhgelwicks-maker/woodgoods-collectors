@@ -9,7 +9,8 @@ import datetime as dt
 from bs4 import BeautifulSoup
 
 from adapters.leagueapps import LeagueAppsCollector, NXTCollector
-from adapters.misc_sites import AdrenalineCollector, VictoryCollector, TrilogyCollector, PrimeTimeCollector
+from adapters.misc_sites import AdrenalineCollector, VictoryCollector, TrilogyCollector, PrimeTimeCollector, ML8Collector, HoganCollector, place_from_text
+from adapters.misc_sites import venue_from_page, merge_page_place, best_link
 from adapters.static_sites import ApexCollector, MLTCollector, BukuCollector
 
 
@@ -154,3 +155,163 @@ def test_buku_reads_the_showcases_page_too(monkeypatch):
 
 def test_primetime_reads_en_dash_ranges():
     assert PrimeTimeCollector.DATE_LINE.match("July 22nd \u2013 25th, 2027")
+
+
+def test_ml8_reads_each_events_place_from_its_page_not_the_footer(monkeypatch):
+    c = ML8Collector(use_cache=False)
+    card = lambda slug, n, d: (f'<a class="card-container" href="/events/{slug}"><h3>{n}</h3><div>{d}</div></a>')
+    fake_pages(c, monkeypatch, {
+        c.URL: card("sweetlax", "SWEETLAX SUMMER CHALLENGE", "<div>June</div><div>19</div><div>&amp;</div><div>20</div><div>2027</div>")
+               + card("backstage-pass", "Backstage Pass", "<div>June</div><div>21</div><div>2027</div>"),
+        "https://www.ml8events.com/events/sweetlax": '<div class="event-date is-not-capitalized w-condition-invisible">Old Field - Miami, FL</div>'
+            '<div class="event-date is-not-capitalized">DE Turf - Frederica, DE</div><footer>Miami, FL 33101</footer>',
+        "https://www.ml8events.com/events/backstage-pass": '<div class="event-date is-not-capitalized">TBD, Maryland</div>'})
+    evs = {e.name: e for e in c.collect()}
+    sw = evs["Sweetlax Summer Challenge"]
+    assert (sw.venue, sw.city, sw.state, sw.end_date) == ("DE Turf", "Frederica", "DE", dt.date(2027, 6, 20))
+    assert sw.source_url == "https://www.ml8events.com/events/sweetlax"
+    assert (evs["Backstage Pass"].city, evs["Backstage Pass"].state) == (None, "MD")
+
+
+def test_place_from_text_reads_venue_and_town():
+    assert place_from_text("Iron Peak Sports & Events Hillsborough, NJ NOTRE DAME High School Lawrenceville, NJ") == \
+        ("Iron Peak Sports & Events", "Hillsborough", "NJ")
+    assert place_from_text("Round Rock Multipurpose Complex 2001 N. Kenney Fort Blvd Round Rock, TX 78665") == \
+        ("Round Rock Multipurpose Complex", "Round Rock", "TX")
+    assert place_from_text("JUNE 12-13, 2027 Hershey, Pennsylvania All Teams")[1:] == ("Hershey", "PA")
+
+
+def test_trilogy_reads_venue_and_town_from_the_event_page(monkeypatch):
+    c = TrilogyCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.URL: '<a href="https://trilogylacrosse.com/events/east-coast-cup/">EAST COAST CUP JUN 19 - 20, 2027 | NJ</a>',
+        "https://trilogylacrosse.com/events/east-coast-cup/": "<h2>Locations</h2><p>Mercer County Park/College West Windsor, NJ</p>"
+                                                               "<p>2nd Location TBD</p><h2>Divisions</h2>"})
+    e = c.collect()[0]
+    assert (e.venue, e.city, e.state) == ("Mercer County Park/College", "West Windsor", "NJ")
+
+
+def test_hogan_place_comes_from_the_location_block_not_page_words(monkeypatch):
+    c = HoganCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.INDEX: '<a href="/page/fallbrawl">Fall Brawl</a>',
+        "https://www.hoganlax.com/page/fallbrawl": "<h1>Fall Brawl</h1><p>Round Robin Format Register DETAILS Dates, Times, Location "
+                                                   "November 8, 2026 Annapolis, MD First game 8:00</p>"})
+    e = c.collect()[0]
+    assert (e.venue, e.city, e.state) == (None, "Annapolis", "MD")
+
+
+def test_mlt_reads_a_past_date_on_its_upcoming_list_as_next_year_with_a_note(monkeypatch):
+    c = MLTCollector(use_cache=False)
+    past = dt.date.today() - dt.timedelta(days=200)
+    raw = f"{past:%B} {past.day}, {past.year}"
+    card = (f'<div class="rb-event-card"><a href="https://mlt.test/event/box/"></a><div class="rb-event-title">Carolina Box Championship</div>'
+            f'<div class="rb-event-details"><div class="rb-detail-item">{raw}</div><div class="rb-detail-item">NetSports Complex, Cary NC</div>'
+            '<div class="rb-detail-item">Boys</div></div></div>')
+    fake_pages(c, monkeypatch, {c.URL: card})
+    e = c.collect()[0]
+    assert e.start_date.year == past.year + 1 and (e.start_date.month, e.start_date.day) == (past.month, past.day)
+    assert "mistyped" in e.date_note and raw in e.date_note
+    assert MLTCollector._year_typo(dt.date.today(), None, "x")[2] is None                 # upcoming dates untouched
+    old = dt.date.today() - dt.timedelta(days=500)
+    assert MLTCollector._year_typo(old, old, "x") == (old, old, None)                      # still past a year on: left alone
+
+
+def test_multi_venue_events_become_one_row_per_site(monkeypatch):
+    from collectors.woodgoods_lacrosse import expand_sites, to_common, split_venues
+    from core.model import Event
+    ev = Event(organizer="MLT", name="Lax Fest", start_date=dt.date(2027, 6, 19), end_date=dt.date(2027, 6, 20),
+               venue="Farmingdale State College & Destination KP", state="NY")
+    rows = [to_common(x, "mlt") for x in expand_sites(ev)]
+    assert [(r["name"], r["venue_name"]) for r in rows] == [("Lax Fest – Site 1", "Farmingdale State College"),
+                                                            ("Lax Fest – Site 2", "Destination KP")]
+    assert len({r["source_event_id"] for r in rows}) == 2 and "site" not in rows[0]["source_event_id"]   # stable ids
+    assert split_venues("Iron Peak Sports & Events") == ["Iron Peak Sports & Events"]
+    assert split_venues("SUSA Orlin & Cohen Sports Complex & Destination KP") == ["SUSA Orlin & Cohen Sports Complex", "Destination KP"]
+    assert split_venues("DE and PA") == ["DE and PA"]
+    assert split_venues("North Myrtle Beach Park and Sports Complex") == ["North Myrtle Beach Park and Sports Complex"]
+    one = Event(organizer="MLT", name="Spring Jam", start_date=dt.date(2027, 5, 8), venue="Stony Brook South P Lot", state="NY")
+    assert expand_sites(one) == [one]
+
+
+def test_trilogy_keeps_every_location(monkeypatch):
+    c = TrilogyCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.URL: '<a href="https://trilogylacrosse.com/events/radar/">RADAR INVITATIONAL JUN 19 - 20, 2027 | NJ</a>',
+        "https://trilogylacrosse.com/events/radar/": "<h2>Location</h2><p>Iron Peak Sports & Events Hillsborough, NJ</p>"
+                                                     "<p>NOTRE DAME High School Lawrenceville, NJ</p><h2>Divisions</h2>"})
+    e = c.collect()[0]
+    assert e.sites == [("Iron Peak Sports & Events", "Hillsborough", "NJ"), ("NOTRE DAME High School", "Lawrenceville", "NJ")]
+
+
+def test_primetime_town_lists_become_sites():
+    assert PrimeTimeCollector.towns("Northborough / Fitchburg, MA & Smithfield, RI") == \
+        [(None, "Northborough", "MA"), (None, "Fitchburg", "MA"), (None, "Smithfield", "RI")]
+    assert PrimeTimeCollector.towns("Amherst, Northborough, & Bellingham, MA") == \
+        [(None, "Amherst", "MA"), (None, "Northborough", "MA"), (None, "Bellingham", "MA")]
+    assert PrimeTimeCollector.towns("Smithfield, RI") == []
+
+
+def test_apex_reads_the_location_box_even_after_many_class_badges(monkeypatch):
+    c = ApexCollector(use_cache=False)
+    badges = "".join(f'<span class="badge">{y}</span>' for y in (2030, 2029, 2028, 2027))
+    html = ('<h3>Boys Apex Summer Invitational High School</h3><div class="dates"><img/><div><span class="event-date">July 11 & 12, 2027'
+            f'</span><div class="event-classes"><span>Classes: {badges}</span></div></div></div>'
+            '<div class="location"><img/><ul class="location-info"><li>University of Delaware</li><li>631 S College Ave</li>'
+            '<li>Newark, DE 19716</li></ul></div>')
+    fake_pages(c, monkeypatch, {"https://apexlacrosseevents.com/boys-tournaments/": html})
+    e = c.collect()[0]
+    assert (e.venue, e.city, e.state) == ("University of Delaware", "Newark", "DE")
+
+
+def test_place_from_text_keeps_lowercase_venues_and_drops_greater_area():
+    assert place_from_text("nCino Sports Parks 205 Sutton Steam Plant Rd Wilmington, NC  28401") == \
+        ("nCino Sports Parks", "Wilmington", "NC")
+    assert place_from_text("Greater Tinton Falls Area Tinton Falls, NJ") == (None, "Tinton Falls", "NJ")
+
+
+def test_event_page_venues_and_the_safety_rule():
+    assert venue_from_page("Texas Draw June 5-6, 2027 | Beacon Park, Melissa, TX| Boys Register") == ("Beacon Park", "Melissa", "TX")
+    assert venue_from_page("Venue & Location Santa Barbara Polo Club 3300 Via Real, Carpinteria, CA 93013 Map linked here") == \
+        ("Santa Barbara Polo Club", "Carpinteria", "CA")
+    assert venue_from_page("Where: Farmingdale State College, 2350 NY-110, Farmingdale, N.Y. 11735, Golf Fields") == \
+        ("Farmingdale State College", "Farmingdale", "NY")
+    # the listing's town wins; a venue from another town (a party on the event page) is dropped; page text is not a venue
+    assert merge_page_place("Frederica", "DE", ("The Treehouse Lounge", "Rehoboth Beach", "DE")) == (None, "Frederica", "DE")
+    assert merge_page_place("Huntington Station", "NY", ("Breezy Park", "Rogues Path Huntington Station", "NY")) == \
+        ("Breezy Park", "Huntington Station", "NY")
+    assert merge_page_place("Melissa", "TX", ("Event Links Hotels Sponsors", "Melissa", "TX")) == (None, "Melissa", "TX")
+    assert merge_page_place(None, None, ("IMG Academy", "Bradenton", "FL")) == ("IMG Academy", "Bradenton", "FL")
+    assert best_link("Lake Tahoe Summit", ["https://pllplay.com/tournaments/lake-tahoe-summit-classic/",
+                                           "https://pllplay.com/tournaments/jamtown/"]).endswith("lake-tahoe-summit-classic/")
+
+
+def test_town_without_a_comma_and_venue_without_a_town(monkeypatch):
+    assert place_from_text("Towson University Towson MD") == ("Towson University", "Towson", "MD")
+    c = TrilogyCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.URL: '<a href="https://trilogylacrosse.com/events/fae/">Future Aces East JUL 12 - 15, 2027 | MD | BOYS</a>'
+               '<a href="https://trilogylacrosse.com/events/ad/">Autumn Drop OCT 25, 2026 | NJ</a>',
+        "https://trilogylacrosse.com/events/fae/": "<h3>Locations</h3><p>Towson University</p><p>TOWSON MD</p><h3>Divisions</h3>",
+        "https://trilogylacrosse.com/events/ad/": "<h3>Location</h3><p>Iron Peak Sports & Events</p><p>2032, 2034, 2035/36</p><h3>Divisions</h3>"})
+    evs = {e.name: e for e in c.collect()}
+    assert (evs["Future Aces East"].venue, evs["Future Aces East"].city, evs["Future Aces East"].state) == ("Towson University", "Towson", "MD")
+    assert (evs["Autumn Drop"].venue, evs["Autumn Drop"].city, evs["Autumn Drop"].state) == ("Iron Peak Sports & Events", None, "NJ")
+
+
+def test_every_site_keeps_its_venue_even_in_the_same_town(monkeypatch):
+    from collectors.woodgoods_lacrosse import expand_sites
+    c = TrilogyCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.URL: '<a href="https://trilogylacrosse.com/events/oss/">Ocean State Showdown JUL 10 - 11, 2027 | RI</a>'
+               '<a href="https://trilogylacrosse.com/events/sbt/">Spring Break Tournament MAR 14 - 15, 2027 | FL</a>',
+        "https://trilogylacrosse.com/events/oss/": "<h3>Locations</h3><p>Brown University / Moses Brown School</p><p>Providence, RI</p>"
+            "<p>East Providence HS / PCD Complex</p><p>Providence, RI</p><p>Bishop Hendricken High School</p><p>Warwick, RI</p>"
+            "<p>JWU Harborside Campus</p><p>Cranston, RI</p><h3>Divisions</h3>",
+        "https://trilogylacrosse.com/events/sbt/": "<h3>Locations</h3><p>Paradise Coast Sports Complex</p><p>Naples, FL</p><h3>Eligibility</h3>"})
+    evs = {e.name: e for e in c.collect()}
+    sites = [(s.venue, s.city) for s in expand_sites(evs["Ocean State Showdown"])]
+    assert sites == [("Brown University", "Providence"), ("Moses Brown School", "Providence"), ("East Providence HS", "Providence"),
+                     ("PCD Complex", "Providence"), ("Bishop Hendricken High School", "Warwick"), ("JWU Harborside Campus", "Cranston")]
+    sb = evs["Spring Break Tournament"]
+    assert (sb.venue, sb.city, sb.state) == ("Paradise Coast Sports Complex", "Naples", "FL")

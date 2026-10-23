@@ -189,6 +189,8 @@ class LeagueAppsCollector(BaseCollector):
         for l in block[di + 1:] if di >= 0 else block:
             if l.lower() in ("register", "details", "hotels") or l.lower().startswith("divisions"):
                 continue
+            if re.search(r"\bregistration\b", l, re.I):       # '2026 Fall Ball Registration' heading (Aloha): no location line
+                break
             loc_line = l
             break
 

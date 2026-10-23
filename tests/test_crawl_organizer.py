@@ -285,3 +285,49 @@ def test_ml8_double_dash_dates_city_tags_and_heading_rows():
     assert X.find_city_states("Bel Air, MD, Lacrosse Tournament Edgewood, MD") == ["Bel Air, MD", "Edgewood, MD"]
     assert C.HEADING_NAME.match("Events") and C.HEADING_NAME.match("Upcoming Events")
     assert not C.HEADING_NAME.match("Tournament of Champions")
+
+
+def test_webflow_split_dates_and_hidden_copies_are_read_as_one_date():
+    html = """<div class="card"><a href="/events/backstage-pass"><h3>Backstage Pass</h3><div class="event-date-block">
+    <div class="event-date w-condition-invisible">June</div><div class="event-date">June</div><div class="event-date">21</div>
+    <div class="event-date w-condition-invisible">&amp;</div><div class="event-date"></div><div class="event-date">2027</div></div></a></div>
+    <div class="card"><a href="/events/d3"><h3>ML8 D3 Showcase</h3><div><div>December</div><div>5</div><div>&amp;</div><div>2026</div></div></a></div>"""
+    evs = {e["name"]: (e["start"], e["end"]) for e in C.event_blocks(html, "https://ml8.test/events", TODAY)}
+    assert evs == {"Backstage Pass": (dt.date(2027, 6, 21), dt.date(2027, 6, 21)),
+                   "ML8 D3 Showcase": (dt.date(2026, 12, 5), dt.date(2026, 12, 5))}     # not Dec 5-20
+
+
+def test_deadlines_on_an_event_page_are_not_events():
+    html = """<div><h1>Texas Draw</h1><p>June 5-6, 2027 | Beacon Park, Melissa, TX</p></div>
+    <div><h4>Balances Due</h4><p>Saturday, May 1, 2027</p></div><div><h4>Submit schedule requests by</h4><p>May 15, 2027</p></div>
+    <div><h4>Player Waivers Complete</h4><p>May 28, 2027</p></div>"""
+    assert [e["name"] for e in C.event_blocks(html, "https://victory.test/event/texas-draw/", TODAY)] == ["Texas Draw"]
+
+
+NLF_FALL = """<html><body><div class="ev"><h3>NLF Fall Invitational</h3><p>November 16, 2025</p>
+<a href="/events/fall-events/nlf-fall-invitational/">Details</a></div></body></html>"""
+NLF_WINTER = """<html><body><h1>Winter Events</h1><a href="/events/winter-events/nlf-futures/">NLF Futures at IMG Academy</a></body></html>"""
+NLF_PAGES = {"https://nlf.test/": "<html><body><a href='/events/fall-events/'>Fall Events</a></body></html>",
+             "https://nlf.test/events/fall-events/": NLF_FALL, "https://nlf.test/events/winter-events/": NLF_WINTER,
+             "https://nlf.test/events/fall-events/nlf-fall-invitational/": "<h1>NLF Fall Invitational</h1><p>November 22, 2026</p>",
+             "https://nlf.test/events/winter-events/nlf-futures/": "<h1>NLF Futures at IMG Academy</h1><p>January 16 - 18, 2027</p>"}
+
+
+class NLFFetch:
+    pages, render = 0, False
+    def get(self, url):
+        self.pages += 1
+        return NLF_PAGES.get(url)
+
+
+def test_stale_listings_and_pages_below_a_listing_are_read_as_event_pages():
+    org = {"slug": "nlf-test", "name": "NLF Test", "website": "https://nlf.test/", "scraper": None,
+           "start_pages": ["https://nlf.test/events/fall-events/", "https://nlf.test/events/winter-events/"]}
+    res = C.crawl_organizer(org, fetch=NLFFetch(), today=TODAY)
+    assert {(e["name"], e["start"]) for e in res["events"]} == {("NLF Fall Invitational", dt.date(2026, 11, 22)),
+                                                                ("NLF Futures at IMG Academy", dt.date(2027, 1, 16))}
+    assert C.child_pages(NLF_WINTER, "https://nlf.test/events/winter-events/") == ["https://nlf.test/events/winter-events/nlf-futures/"]
+
+
+def test_comma_glued_year_parses():
+    assert X.find_dates("May 30 - 31,2026", dt.date(2026, 1, 1)) == [(dt.date(2026, 5, 30), dt.date(2026, 5, 31))]

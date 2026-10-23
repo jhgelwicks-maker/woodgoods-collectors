@@ -11,13 +11,166 @@ DATE_INLINE = re.compile(
     r"[A-Za-z]*\.?\s*)?\d{1,2})?,?\s*20\d{2})", re.I)
 
 
+def place_from_text(text):
+    """(venue, city, state) from a page's location text ('Iron Peak Sports & Events Hillsborough, NJ ...',
+    'Round Rock Multipurpose Complex 2001 N. Kenney Fort Blvd Round Rock, TX 78665'), with the crawler's readers.
+    The venue is the text before the street address, else before the first town."""
+    from collectors.organizers import extract as X
+    text = re.sub(r"\s+", " ", text or "").strip()
+    text = re.sub(r"\b([A-Z])\.([A-Z])\.", r"\1\2", text)                  # 'N.Y.' -> 'NY'
+    text = re.sub(r"^Greater\s+[A-Z][\w .'-]*?\s+Area\s+", "", text)     # 'Greater Philadelphia Area West Chester, PA': no venue
+    towns = X.find_city_states(text)
+    if not towns and X.find_city_states(comma_states(text)):
+        text = comma_states(text)
+        towns = X.find_city_states(text)
+    if not towns:
+        return None, None, None
+    city, state = towns[0].rsplit(", ", 1)
+    addrs = X.find_addresses(text)
+    if addrs and 3 <= text.find(addrs[0]) <= 70:
+        venue = text[:text.find(addrs[0])].strip(" ,-|")          # the location box opens with the venue: 'nCino Sports Parks'
+    elif addrs:
+        venue = X.venue_before(text, addrs[0])
+    else:
+        # the town as written with its state ('Farmingdale, NY'), not the same word inside the venue ('Farmingdale State ...')
+        tm = re.search(rf"{re.escape(city)}\s*,\s*(?:{state}\b|[A-Z][a-z]+)", text)
+        i = tm.start() if tm else text.find(city)
+        venue = text[:i].strip(" ,-|") if i > 0 else None
+    if venue:
+        venue = re.sub(r"^(?:location|venue|where)\s*:?\s*", "", venue, flags=re.I)
+        venue = re.sub(r"\s*[-–]?\s*field map\b.*$|\s+map linked here.*$", "", venue, flags=re.I)
+        venue = re.sub(r",?\s+\d{1,6}\b.*$", "", venue)            # 'Santa Barbara Polo Club 3300 Via Real' -> the club
+        venue = re.sub(r"\s+(?:in|at)$", "", venue).strip(" ,-|")
+    if venue and (len(venue) > 70 or len(venue) < 3):
+        venue = None
+    return venue or None, city, state
+
+
+def comma_states(text):
+    """'Towson University Towson MD' -> 'Towson University Towson, MD': a state code written without its comma."""
+    from core.model import STATES
+    codes = "|".join(sorted(STATES))
+    return re.sub(rf"\b([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){{0,3}})\s+({codes})\b(?!,)", r"\1, \2", text or "")
+
+
+def page_text(collector, url):
+    """An event page's visible text without menus, header and footer ('' when it can't be fetched)."""
+    try:
+        soup = collector.soup(url)
+    except Exception:  # noqa: BLE001
+        return ""
+    for t in soup(["script", "style", "noscript", "nav", "header", "footer"]):
+        t.decompose()
+    return re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+
+
+VENUE_LABELS = [r"Venue\s*&\s*Locations?", r"Maps?\s*&\s*Locations?", r"\bWhere\s*:", r"Date\s*&\s*Time.{0,60}?\bLocation\b",
+                r"\bLocation\s*:", r"\bVenue\s*:", r"\bLocation\b"]
+
+
+def venue_from_page(text):
+    """(venue, city, state) from an event page, trying the layouts these sites use:
+    'Texas Draw June 5-6, 2027 | Beacon Park, Melissa, TX | Boys' (Victory header), 'Venue & Location Santa Barbara Polo
+    Club 3300 Via Real, Carpinteria, CA' (Buku), 'Maps & Locations DE Turf Sports Complex- FIELD MAP 4000 Bay Road
+    Frederica, DE' (Victory), 'Where: Farmingdale State College, 2350 NY-110, Farmingdale, NY' (NLF), 'Location DE Turf
+    Sports Complex 4000 Bay Road Frederica, DE' (Adrenaline). The first label followed by a town wins."""
+    m = re.search(r"\|\s*([^|]{3,90}?,\s*[A-Z]{2})\s*\|", text or "")
+    if m:
+        p = place_from_text(m.group(1))
+        if p[1]:
+            return p
+    for label in VENUE_LABELS:
+        for m in re.finditer(label, text or "", re.I):
+            p = place_from_text(text[m.end(): m.end() + 260])
+            if p[1]:
+                return p
+    return None, None, None
+
+
+JUNK_VENUE = re.compile(r"(?i)event links|\bhotels?\b|\bsponsors?\b|\bregister|\bclick\b|multiple locations|see field|\btbd\b|"
+                        r"\btba\b|tour begins|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|^\W*$")
+
+
+def _town_words(c):
+    return re.sub(r"[^a-z ]", " ", (c or "").lower().replace("saint ", "st ")).split()
+
+
+def merge_page_place(city, state, page):
+    """Combine the listing's town with what an event page says. The page's venue is kept only when its town agrees with
+    the listing's ('Rogues Path Huntington Station' agrees with 'Huntington Station'; 'Rehoboth Beach' - a party venue on
+    the Black Card page - does not agree with Frederica), it doesn't look like page text, and the state matches. The
+    listing's town always wins; the page's town fills in only when the listing has none."""
+    venue, c2, st2 = page
+    venue = re.sub(r"^\W+", "", venue or "") or None
+    if venue and JUNK_VENUE.search(venue):
+        venue = None
+    if not c2 or (state and st2 and st2 != state):
+        return None, city, state
+    if city:
+        a, b = _town_words(city), _town_words(c2)
+        short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+        agree = a == b or (len(short) >= 2 and long_[-len(short):] == short) or (len(short) == 1 and long_ == short)
+        return (venue if agree else None), city, state
+    return venue, c2, st2 or state
+
+
+LINK_STOP = {"the", "of", "and", "a", "at", "boys", "girls", "lacrosse", "lax", "tournament", "tournaments", "event", "events"}
+
+
+def best_link(name, hrefs):
+    """The event page for a listing card: the link whose last path part holds most of the name's words
+    ('Texas Draw' -> /event/texas-draw/, 'Lake Tahoe Summit' -> /tournaments/lake-tahoe-summit-classic/)."""
+    words = {w for w in re.findall(r"[a-z0-9]+", (name or "").lower()) if w not in LINK_STOP}
+    best = None
+    for h in dict.fromkeys(hrefs):
+        slug = urllib.parse.urlparse(h).path.rstrip("/").rsplit("/", 1)[-1].lower()
+        sw = {w for w in re.split(r"[-_]", slug) if w and w not in LINK_STOP}
+        if not words or not sw:
+            continue
+        share = len(words & sw) / len(words)
+        if share >= 0.6 and (best is None or (share, -len(sw)) > best[0]):
+            best = ((share, -len(sw)), h)
+    return best[1] if best else None
+
+
+def site_links(collector, url, pattern):
+    """Absolute links on a listing page that match an event-page pattern."""
+    try:
+        soup = collector.soup(url)
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for a in soup.find_all("a", href=True):
+        h = urllib.parse.urljoin(url, a["href"]).split("#")[0]
+        if re.search(pattern, h) and h not in out:
+            out.append(h)
+    return out
+
+
+def places_from_text(text):
+    """Every (venue, city, state) in a location block, in order: 'Iron Peak Sports & Events Hillsborough, NJ NOTRE DAME
+    High School Lawrenceville, NJ' -> two sites. Each venue is the text between the previous town and this one."""
+    from collectors.organizers import extract as X
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if not X.find_city_states(text):
+        text = comma_states(text)                                    # 'Towson University Towson MD'
+    out, pos = [], 0
+    for city, state, start, end in X.city_state_spans(text):       # every town, repeats too (two sites in Providence)
+        venue = re.sub(r"^(?:\d+(?:st|nd|rd|th)\s+location\s*:?\s*)", "", text[pos:start].strip(" ,-|"), flags=re.I)
+        out.append((venue if 3 <= len(venue) <= 70 and not JUNK_VENUE.search(venue) else None, city, state))
+        pos = end
+    return out
+
+
 class TrilogyCollector(BaseCollector):
     """Trilogy Lacrosse.
 
     The NAV MENU carries the whole slate, pre-split by gender:
         'Midwest Momentum OCT 24 - 25, 2026 | OH'
-    Parse the menu links, not the page body. Venue needs a second hop,
-    which we skip by default - state is enough to route an operator.
+    Parse the menu links, not the page body. Venue and town are on each
+    event's page ('Location(s) Mercer County Park West Windsor, NJ ...
+    Divisions'): one more fetch per event, so matching and venue mapping
+    have a town, not just a state. The first location is taken.
     """
     slug = "trilogy"
     organizer = "Trilogy"
@@ -47,15 +200,40 @@ class TrilogyCollector(BaseCollector):
             gender = normalize_gender(m.group("gender") or name)       # '| GIRLS' or 'Girls Winter Indoor League'
             if gender == "unknown":
                 gender = self._gender_from_menu(a)
+            sites = self.locations(a.get("href"))
+            venue, city, st = sites[0] if sites else (None, None, None)
             out.append(Event(
                 organizer=self.organizer,
                 name=name.title() if name.isupper() else name,
                 start_date=start, end_date=end, raw_date=m.group("date"),
-                state=m.group("state").upper(), gender=gender,
+                venue=venue, city=city if st in (None, m.group("state").upper()) else None,
+                state=m.group("state").upper(), gender=gender, sites=sites if len(sites) > 1 else [],
                 event_type=self._type_from_menu(a, name),
                 source_url=a.get("href", self.URL),
             ))
         return out
+
+    def locations(self, url):
+        """Every (venue, city, state) in the 'Location(s) ... Divisions' block of an event page ('2nd Location TBD' is
+        left out: no place yet)."""
+        if not url:
+            return []
+        try:
+            text = re.sub(r"\s+", " ", self.soup(url).get_text(" ", strip=True))
+        except Exception:  # noqa: BLE001
+            return []
+        # up to the next section heading ('Divisions', or 'Eligibility' on Spring Break Training), at most 400 characters
+        m = re.search(r"\bLocations?\b\s*(.{5,400}?)\s*(?:\b(?:Divisions?|Eligibility|Cost|Dates|Register|Event Summary)\b|$)", text)
+        if not m:
+            return []
+        sites = places_from_text(m.group(1))
+        if not sites:
+            # a venue with no town ('Iron Peak Sports & Events 2032, 2034, 2035/36', 'Mercer County Park & Community
+            # College SAT: 2032 + 2034'): keep the venue, cut where the division notes start
+            venue = re.split(r"\s+(?:\d{4}\b|(?:SAT|SUN|FRI|MON)\b\s*:)", m.group(1))[0].strip(" ,-|")
+            if 3 <= len(venue) <= 70 and not JUNK_VENUE.search(venue):
+                sites = [(venue, None, None)]
+        return sites
 
     @staticmethod
     def _gender_from_menu(a):
@@ -100,7 +278,7 @@ class VictoryCollector(BaseCollector):
     NOT_NAME = re.compile(r"^(learn more|view event|register|details)$", re.I)
 
     def collect(self):
-        found = {}
+        found, links = {}, {}
         for url, page_gender in self.PAGES:
             try:
                 lines = [re.sub(r"\s+", " ", l).strip() for l in
@@ -137,13 +315,17 @@ class VictoryCollector(BaseCollector):
                         ev.gender = gender
                     continue
                 c, st = split_city_state(city)
+                page = best_link(name, links.setdefault(url, site_links(self, url, r"victoryeventseries\.com/event/[^/]+/?$")))
+                venue = None
+                if page:
+                    venue, c, st = merge_page_place(c, st, venue_from_page(page_text(self, page)))
                 found[key] = Event(
                     organizer=self.organizer,
                     name=name.title() if name.isupper() else name,
                     start_date=start, end_date=end, raw_date=line,
-                    city=c, state=st, gender=gender,
+                    venue=venue, city=c, state=st, gender=gender,
                     event_type="showcase" if "showcase" in name.lower() or "showcases" in url else "tournament",
-                    source_url=url,
+                    source_url=page or url,
                 )
         return list(found.values())
 
@@ -187,9 +369,11 @@ class HoganCollector(BaseCollector):
             start, end = parse_date_range(m.group(1))
             if not start:
                 continue
-            cm = re.search(r"([A-Z][A-Za-z .'-]+,\s*[A-Z]{2})\b", body)
-            city, state = split_city_state(cm.group(1) if cm else None)
-            vm = re.search(r"(?:at|@)\s+([A-Z][A-Za-z0-9 .'&-]{5,45})", body)
+            # 'DETAILS Dates, Times, Location November 8, 2026 Annapolis, MD' / '... Hershey, Pennsylvania'
+            li = body.find("Dates, Times, Location")
+            _, city, state = place_from_text(body[li + 22: li + 200] if li >= 0 else body[m.end(): m.end() + 150])
+            # 'host a spring tournament at CopperPlex with 8 Field Turf fields' (not 'Format Register DETAILS')
+            vm = re.search(r"\btournament\s+at\s+((?:[A-Z][\w'&.-]*\s?){1,5}?)(?=\s+(?:with|in|on)\b|[,.])", body)
             key = (title.lower(), start)
             if key in seen:
                 continue
@@ -206,7 +390,10 @@ class HoganCollector(BaseCollector):
 class ML8Collector(BaseCollector):
     """ML8 Events. Dates are FRAGMENTED across lines by their date widget:
         'THE SPOTLIGHT' / 'October' / 'October' / '17' / '&' / '18' / '2026'
-    Reassemble from the token window after each event name."""
+    Reassemble from the token window after each event name.
+    Cards carry no place; each event's page shows it under the date ('DE Turf - Frederica, DE',
+    'TBD, Maryland'), so we follow the card link. Never take a city from the page footer: that is
+    ML8's own office (Miami, FL) and appears on every page."""
     slug = "ml8"
     organizer = "ML8"
     tier = 2
@@ -214,9 +401,34 @@ class ML8Collector(BaseCollector):
     MONTH = re.compile(r"^(January|February|March|April|May|June|July|August|"
                        r"September|October|November|December)$", re.I)
 
+    def place(self, url):
+        """(venue, city, state) from an event page's place line, the visible .event-date.is-not-capitalized with a comma."""
+        try:
+            soup = self.soup(url)
+        except Exception as e:  # noqa: BLE001
+            self.errors.append(f"{self.slug} {url}: {e}")
+            return None, None, None
+        for d in soup.select(".event-date.is-not-capitalized"):
+            t = self.txt(d) or ""
+            if "w-condition-invisible" in (d.get("class") or []) or "," not in t:
+                continue
+            venue, _, loc = t.rpartition(" - ")
+            city, state = split_city_state(loc)
+            if city and city.upper() == "TBD":
+                city = None
+            return venue.strip() or None, city, state
+        return None, None, None
+
     def collect(self):
+        soup = self.soup(self.URL)
         lines = [re.sub(r"\s+", " ", l).strip() for l in
-                 self.soup(self.URL).get_text("\n", strip=True).split("\n") if l.strip()]
+                 soup.get_text("\n", strip=True).split("\n") if l.strip()]
+        # card title -> its event page ('/events/sweetlax-summer-challenge'), where the place is
+        pages = {}
+        for a in soup.select("a.card-container[href]"):
+            h = a.find("h3")
+            if h and a["href"].startswith("/events/"):
+                pages.setdefault(self.txt(h).lower(), urllib.parse.urljoin(self.URL, a["href"]))
         out, seen = [], set()
         for i, line in enumerate(lines):
             # an event name is an ALLCAPS-ish line immediately followed by a month token
@@ -239,18 +451,18 @@ class ML8Collector(BaseCollector):
             if not start:
                 continue
             etype = "showcase" if any("showcase" in w.lower() for w in win) else "tournament"
-            loc = next((w for w in win if re.search(r",\s*[A-Z]{2}\b", w)), None)
-            city, state = split_city_state(loc)
             key = (name.lower(), start)
             if key in seen:
                 continue
             seen.add(key)
+            page = pages.get(name.lower())
+            venue, city, state = self.place(page) if page else (None, None, None)
             out.append(Event(
                 organizer=self.organizer,
                 name=name.title() if name.isupper() else name,
                 start_date=start, end_date=end, raw_date=raw,
-                city=city, state=state, gender="boys",
-                event_type=etype, source_url=self.URL,
+                venue=venue, city=city, state=state, gender="boys",
+                event_type=etype, source_url=page or self.URL,
             ))
         return out
 
@@ -268,9 +480,15 @@ class PrimeTimeCollector(BaseCollector):
         r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?"
         r"(?:\s*[/&\u2013\u2014-]\s*(?:[A-Z][a-z]+\.?\s*)?\d{1,2}(?:st|nd|rd|th)?)?,?\s*20\d{2}$", re.I)
 
+    @staticmethod
+    def page_place(text):
+        m = re.search(r"Event Overview.{0,80}?\bDATE\b\s*(.{3,160}?)\s*\bDivisions\b", text or "", re.I)
+        return place_from_text(re.sub(r"\bLocation\b", " ", m.group(1))) if m else (None, None, None)
+
     def collect(self):
         lines = [re.sub(r"\s+", " ", l).strip() for l in
                  self.soup(self.URL).get_text("\n", strip=True).split("\n") if l.strip()]
+        links = site_links(self, self.URL, r"primetimelacrosse\.com/event/[^/]+/?$")
         out, seen = [], set()
         for i, line in enumerate(lines):
             if not self.DATE_LINE.match(line):
@@ -288,19 +506,39 @@ class PrimeTimeCollector(BaseCollector):
                     loc = nxt
                 elif re.search(r"\b(Boys|Girls)\b", nxt, re.I) and not divisions:
                     divisions = nxt
+            # one event at several towns -> one site each: 'Saratoga Springs & Queensbury, NY',
+            # 'Northborough / Fitchburg, MA & Smithfield, RI', 'Amherst, Northborough, & Bellingham, MA'
             city, state = split_city_state((loc or "").split("&")[-1].strip())
+            sites = self.towns(loc) if loc and re.search(r"[&/]", loc) else []
             key = (name.lower(), start)
             if key in seen:
                 continue
             seen.add(key)
+            # the venue is on the event's own page: 'Event Overview ... DATE Location Rogers Field, Devens, MA Divisions'
+            venue, page = None, best_link(name, links)
+            if page and not sites:
+                venue, city, state = merge_page_place(city, state, self.page_place(page_text(self, page)))
             out.append(Event(
-                organizer=self.organizer, name=name,
+                organizer=self.organizer, name=name, venue=venue,
                 start_date=start, end_date=end, raw_date=line,
                 city=city, state=state,
                 gender=normalize_gender((divisions or "") + " " + name),
-                age_range=divisions, source_url=self.URL,
+                age_range=divisions, source_url=page or self.URL, sites=sites,
             ))
         return out
+
+
+    @staticmethod
+    def towns(loc):
+        """[(None, town, ST), ...]: each state code closes the towns listed before it."""
+        out, pending = [], []
+        for tok in [t.strip(" .") for t in re.split(r"\s*(?:&|/|,)\s*", loc or "") if t.strip(" .")]:
+            if re.fullmatch(r"[A-Z]{2}", tok):
+                out += [(None, t, tok) for t in pending]
+                pending = []
+            else:
+                pending.append(tok)
+        return out if len(out) > 1 and not pending else []
 
 
 class AdrenalineCollector(BaseCollector):
@@ -357,6 +595,37 @@ class AdrenalineCollector(BaseCollector):
         return best[1] if best else None
 
     AJAX = "https://www.adrln.com/wp-admin/admin-ajax.php"
+    HOME = "https://www.adrln.com/"
+
+    def homepage_only(self, known_pages, out):
+        """Events linked from the homepage but missing from /events/ ('Texas Thrive'): read their own pages."""
+        try:
+            soup = self.soup(self.HOME)
+        except Exception as e:  # noqa: BLE001
+            self.errors.append(f"{self.slug} homepage: {e}")
+            return []
+        found = []
+        known = {u.rstrip("/").replace("://adrln", "://www.adrln") for u in known_pages}
+        for a in soup.find_all("a", href=True):
+            h = urllib.parse.urljoin(self.HOME, a["href"]).split("?")[0].rstrip("/")
+            if not re.search(r"adrln\.com/events/[^/]+$", h) or h.replace("://adrln", "://www.adrln") in known:
+                continue
+            known.add(h.replace("://adrln", "://www.adrln"))
+            try:
+                page = self.soup(h + "/")
+            except Exception:  # noqa: BLE001
+                continue
+            title = re.split(r"\s+[-|–]\s+", self.txt(page.find("title")) or "")[0].strip()
+            text = re.sub(r"\s+", " ", page.get_text(" ", strip=True))
+            s, e, raw = self.event_dates(h + "/")
+            if not title or not s or any(x.name.lower() == title.lower() and x.start_date == s for x in out):
+                continue
+            li = text.find("Location", text.find("Date & Time"))
+            venue, city, state = place_from_text(text[li + 8: li + 200]) if li >= 0 else (None, None, None)
+            found.append(Event(organizer=self.organizer, name=title, start_date=s, end_date=e or s, raw_date=raw,
+                               venue=venue, city=city, state=state, gender=normalize_gender(text[:3000]),
+                               event_type="showcase" if "showcase" in title.lower() else "tournament", source_url=h + "/"))
+        return found
 
     def more_cards(self, html):
         """The cards hidden behind 'Load More': same markup as the index, fetched page by page until one comes back empty."""
@@ -421,12 +690,14 @@ class AdrenalineCollector(BaseCollector):
                 page = (pages.get(key_name) or next((h for k, h in pages.items() if k and (k in key_name or key_name in k)), None)
                         or self.page_by_words(name, pages))
                 src = url
-                if page:
-                    s2, e2, raw2 = self.event_dates(page)
-                    if s2 and abs((s2 - start).days) <= 7:      # same event: trust its own page's full range
-                        start, end, raw, src = s2, e2 or s2, raw2, page
                 loc = next((w for w in win if re.search(r",\s*[A-Z]{2}\b", w)), None)
                 city, state = split_city_state(loc)
+                venue = None
+                if page:
+                    s2, e2, raw2 = self.event_dates(page)
+                    if s2 and abs((s2 - start).days) <= 7:      # same event: trust its own page's full range and venue
+                        start, end, raw, src = s2, e2 or s2, raw2, page
+                        venue, city, state = merge_page_place(city, state, venue_from_page(page_text(self, page)))
                 gender = normalize_gender(" ".join(win))
                 key = (name.lower(), start)
                 if key in seen:
@@ -435,7 +706,7 @@ class AdrenalineCollector(BaseCollector):
                 out.append(Event(
                     organizer=self.organizer, name=name,
                     start_date=start, end_date=end, raw_date=raw,
-                    city=city, state=state, gender=gender,
+                    venue=venue, city=city, state=state, gender=gender,
                     age_range=next((w for w in win if re.fullmatch(r"20\d{2}\s*-\s*20\d{2}", w)), None),
                     event_type="showcase" if "showcase" in name.lower() else "tournament",
                     source_url=src,
@@ -467,6 +738,7 @@ class AdrenalineCollector(BaseCollector):
                     start_date=start, end_date=end, raw_date=raw,
                     source_url=url,
                 ))
+        out += self.homepage_only([e.source_url for e in out], out)
         return out
 
 
@@ -504,8 +776,10 @@ class NLFCollector(BaseCollector):
             start, end = parse_date_range(m.group(1))
             if not start:
                 continue
-            cm = re.search(r"([A-Z][A-Za-z .'-]+,\s*[A-Z]{2})\b", body)
-            city, state = split_city_state(cm.group(1) if cm else None)
+            venue, city, state = merge_page_place(None, None, venue_from_page(body))   # 'Where: Farmingdale State College, ...'
+            if not state:
+                cm = re.search(r"([A-Z][A-Za-z .'-]+,\s*[A-Z]{2})\b", body)
+                city, state = split_city_state(cm.group(1) if cm else None)
             key = (title.lower(), start)
             if key in seen:
                 continue
@@ -513,6 +787,6 @@ class NLFCollector(BaseCollector):
             out.append(Event(
                 organizer=self.organizer, name=title,
                 start_date=start, end_date=end, raw_date=m.group(1),
-                city=city, state=state, gender="boys", source_url=url,
+                venue=venue, city=city, state=state, gender="boys", source_url=url,
             ))
         return out

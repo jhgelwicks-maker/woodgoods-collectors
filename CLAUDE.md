@@ -93,6 +93,12 @@ collectors whose required key is missing.
   `~/WoodGoodsAI/backup/backfill/R<a>-<b>.jsonl` before posting; `.done` markers make reruns resume;
   `python -m collectors.replay_history <files>` resends. Skips unfinished events and junk (pre-2014 dates, test/mock names).
   2026-10-08: R68000–185500 done, 101,717 history rows, 0 errors.
+- Lacrosse match report: `python tools/lacrosse_match_report.py` scrapes the 14 organizer sites and matches every event
+  against the app's upcoming lacrosse rows (placeholders, Tourney Machine, App data(manual-lacrosse-sheet)) from the newest local export
+  (`backup/db/fresh`, else `current`). CSV in `~/WoodGoodsAI/reports/` with CONFIRMED / DATE MOVED / DATE CONFLICT / REVIEW /
+  NOT ON ORGANIZER SITE / NEW plus tags. `--scraped <file>.scraped.jsonl` reruns without scraping.
+  Found 2026-10-23: the app rolls placeholders forward by ISO week number (+371 days from 2026, which has 53 weeks), so
+  7,851 of 9,176 placeholders (all sports) sit a week after the real weekend; organizers repeat at +364 days.
 - Database backup: `tools/backup_db.py` pulls every table from the app's read-only `GET /api/public/export`
   (header `x-export-key`, 1,000 rows per page) into `~/WoodGoodsAI/backup/db/current` (+ `previous`).
   Runs Mondays 09:00 via `~/Library/LaunchAgents/com.woodgoods.dbbackup.plist`, and after every local backfill.

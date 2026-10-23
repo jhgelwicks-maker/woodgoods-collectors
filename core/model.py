@@ -64,11 +64,15 @@ def split_city_state(text):
         return None, None
     parts = [p.strip() for p in str(text).split(",")]
     tail = parts[-1] if parts else ""
-    tok = tail.split()[0].upper() if tail.split() else ""
+    tok = tail.split()[0].upper().rstrip(".") if tail.split() else ""      # 'NC.' is NC
     if tok in STATES:
         return (", ".join(parts[:-1]).strip() or None), tok
     if tail.lower() in FULL_STATE:
         return (", ".join(parts[:-1]).strip() or None), FULL_STATE[tail.lower()]
+    words = tail.split()
+    if len(words) > 1 and words[-1].strip(".").upper() in STATES and words[-1].strip(".").isupper():
+        # 'NetSports Complex, Cary NC': the state code with no comma before it
+        return (", ".join(parts[:-1] + [" ".join(words[:-1])]).strip() or None), words[-1].strip(".").upper()
     for p in reversed(parts):
         if p.upper() in STATES:
             return (", ".join(x for x in parts if x != p).strip() or None), p.upper()
@@ -178,6 +182,8 @@ class Event:
     age_range: Optional[str] = None
     team_count: Optional[str] = None
     college_coaches: Optional[int] = None   # recruiters attending (a showcase signal), never a team count
+    date_note: Optional[str] = None          # set when the date is not exactly what the site printed (a corrected year)
+    sites: list = field(default_factory=list)  # [(venue, city, state), ...] when the organizer lists several venues
     vendor_fee: Optional[str] = None
     event_type: str = "tournament"
     source_url: Optional[str] = None

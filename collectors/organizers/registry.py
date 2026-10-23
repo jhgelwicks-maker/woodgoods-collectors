@@ -49,7 +49,10 @@ START_PAGES = {
     "ml8": ["https://www.ml8events.com/events"],
     "primetime": ["https://primetimelacrosse.com/events/"],
     "adrenaline": ["https://adrln.com/events/"],
-    "nlf": ["https://nationallacrossefederation.com/events/fall-events/"],
+    "nlf": ["https://nationallacrossefederation.com/events/fall-events/", "https://nationallacrossefederation.com/events/summer-events/",
+            "https://nationallacrossefederation.com/events/winter-events/"],     # listings are last season's; event pages are current
+    "victory": ["https://victoryeventseries.com/boys/", "https://victoryeventseries.com/girls/",
+                "https://victoryeventseries.com/showcases/"],              # homepage shows only the next few
 }
 
 
