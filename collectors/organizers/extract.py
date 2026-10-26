@@ -127,6 +127,9 @@ def city_state_spans(text):
     for m in CITY_ST.finditer(text or ""):
         raw = re.sub(r"^(?:in|at|near|the|and|location|venue)\s+", "", m.group(1), flags=re.I)
         city, st = _city_only(raw), _st(m.group(2))
+        w = city.split()
+        if len(w) % 2 == 0 and w[:len(w) // 2] == w[len(w) // 2:]:
+            city = " ".join(w[:len(w) // 2])                # 'Pingry School - Basking Ridge Basking Ridge, NJ'
         if not st or len(city) < 3 or city.lower() in STATE_BY_NAME: continue
         i = m.group(1).lower().rfind(city.lower())
         start = m.start(1) + (i if i >= 0 else 0)

@@ -141,6 +141,36 @@ class LeagueAppsCollector(BaseCollector):
             g = set(p["genders"])
             ev.gender = "coed" if g == {True, False} else "boys" if g == {True} else "girls" if g == {False} else ev.gender
 
+    @staticmethod
+    def location_sites(text):
+        """[(venue, city, state, address), ...] from the page's LOCATIONS section: 'Cedar Lane Park: 1100 Cedar Ln, Bel Air,
+        MD 21015 Calvert Regional Park: 304 Brick Meeting House Road, North East MD' (session headings and repeats
+        dropped), 'North Worcester Sports Complex 9906 Buckingham Ln, Berlin, MD 21811 MAYS ... 6605 Morris Road ...'."""
+        from adapters.misc_sites import addresses_in, comma_states
+        from collectors.organizers import extract as X
+        m = re.search(r"\bLOCATIONS?\b\s*:?\s*(.{10,900}?)(?=\b(?:DIVISIONS?|SCHEDULE|HOTELS?|COST|PRICING|REGISTRATION|RULES|"
+                      r"FORMAT|EVENT CANCELLATION|AGE|CONTACT)\b|$)", text or "")
+        if not m:
+            return []
+        sec = comma_states(m.group(1))
+        sec = re.sub(r"Session\s+[IVX\d]+\s*:\s*\w+day,?\s*\w+\s+\d{1,2}(?:st|nd|rd|th)?", " ", sec)
+        sec = re.sub(r"\s+", " ", sec)                     # the same spacing addresses_in measures positions on
+        out, prev, seen = [], 0, set()
+        for pos, addr in addresses_in(sec):
+            venue = re.sub(r"\s+", " ", sec[prev:pos]).strip(" :,-|")
+            prev = pos + len(addr)
+            towns = X.find_city_states(addr)
+            if not towns:
+                continue
+            city, st = towns[-1].rsplit(", ", 1)
+            from adapters.misc_sites import addr_key
+            key = addr_key(addr)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((venue if 3 <= len(venue) <= 70 else None, city, st, addr))
+        return out
+
     def parse_event(self, eid):
         """LeagueApps renders a tight header block:
 
@@ -221,10 +251,19 @@ class LeagueAppsCollector(BaseCollector):
         cc = re.search(r"(\d{2,3})\s+college coaches", body, re.I)
         coaches = int(cc.group(1)) if cc else None
 
+        from adapters.misc_sites import pick_address, map_addresses
+        maps = list(dict.fromkeys(map_addresses(soup)))
+        page = re.sub(r"\s+", " ", soup.get_text(" ", strip=True)) + " " + " ".join(maps)
+        from adapters.misc_sites import more_sites
+        sites = more_sites(page, self.location_sites(page), state)
         return Event(
             organizer=self.organizer, name=name,
             start_date=start, end_date=end, raw_date=raw_date,
             venue=venue, city=city, state=state,
+            # the page prints the address or links it on Google Maps ('19000 Grand Park Blvd, Westfield, IN 46074')
+            address=(sites[0][3] if sites else maps[0] if len(maps) == 1 and re.search(r"\d", maps[0]) else
+                     pick_address(page, city, state, venue if venue and venue.lower() != "multiple locations" else None)),
+            sites=sites if len(sites) > 1 else [],
             gender=(self.default_gender if self.default_gender != "unknown"
                     else normalize_gender(name + " " + body[:800])),
             age_range=divisions, college_coaches=coaches,

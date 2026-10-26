@@ -241,7 +241,7 @@ def test_trilogy_keeps_every_location(monkeypatch):
         "https://trilogylacrosse.com/events/radar/": "<h2>Location</h2><p>Iron Peak Sports & Events Hillsborough, NJ</p>"
                                                      "<p>NOTRE DAME High School Lawrenceville, NJ</p><h2>Divisions</h2>"})
     e = c.collect()[0]
-    assert e.sites == [("Iron Peak Sports & Events", "Hillsborough", "NJ"), ("NOTRE DAME High School", "Lawrenceville", "NJ")]
+    assert [x[:3] for x in e.sites] == [("Iron Peak Sports & Events", "Hillsborough", "NJ"), ("NOTRE DAME High School", "Lawrenceville", "NJ")]
 
 
 def test_primetime_town_lists_become_sites():
@@ -315,3 +315,133 @@ def test_every_site_keeps_its_venue_even_in_the_same_town(monkeypatch):
                      ("PCD Complex", "Providence"), ("Bishop Hendricken High School", "Warwick"), ("JWU Harborside Campus", "Cranston")]
     sb = evs["Spring Break Tournament"]
     assert (sb.venue, sb.city, sb.state) == ("Paradise Coast Sports Complex", "Naples", "FL")
+
+
+def test_best_link_keeps_boys_and_girls_apart():
+    links = ["https://primetimelacrosse.com/event/primetime-fall-classic-girls/", "https://primetimelacrosse.com/event/primetime-fall-classic/",
+             "https://primetimelacrosse.com/event/bulldog-brawl-girls/", "https://primetimelacrosse.com/event/bulldog-brawl/"]
+    assert best_link("Fall Classic (Boys)", links).endswith("/primetime-fall-classic/")
+    assert best_link("Fall Classic (Girls)", links).endswith("/primetime-fall-classic-girls/")
+    assert best_link("Bulldog Brawl", links).endswith("/bulldog-brawl/")
+    assert best_link("Girls Bulldog Brawl", links).endswith("/bulldog-brawl-girls/")
+
+
+def test_sites_with_their_own_division_notes_and_primetime_site_lines(monkeypatch):
+    from collectors.woodgoods_lacrosse import expand_sites
+    c = TrilogyCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.URL: '<a href="https://trilogylacrosse.com/events/ad/">Autumn Drop OCT 25, 2026 | NJ</a>',
+        "https://trilogylacrosse.com/events/ad/": "<h3>Locations</h3><p>Iron Peak Sports & Events</p><p>2032, 2034, 2035/36 Divisions</p>"
+            "<p>Hillsborough Township, NJ</p><p>Pingry School - Basking Ridge</p><p>2031, 2033 Divisions</p><p>Basking Ridge, NJ</p>"
+            "<h3>Divisions</h3><p>Girls Youth: 2031 - 2035/36</p>"})
+    ad = c.collect()[0]
+    assert [(s.venue, s.city) for s in expand_sites(ad)] == [("Iron Peak Sports & Events", "Hillsborough Township"),
+                                                            ("Pingry School - Basking Ridge", "Basking Ridge")]
+    text = ("Event Overview Date Oct 31st / Nov 1st Location Bryant University, Smithfield, RI (27, 28 & 29) Location NEBC, "
+            "Northborough, MA (29, 30) Location Game On, Fitchburg, MA (Youth) Divisions 2027 - 2036")
+    assert PrimeTimeCollector.page_sites(text) == [("Bryant University", "Smithfield", "RI"), ("NEBC", "Northborough", "MA"),
+                                                   ("Game On", "Fitchburg", "MA")]
+    mid = ("Location 2027-2030 | UMass Amherst Location 2031-2036 | Northborough / Bellingham / Wellesley, MA Divisions ... "
+           "Location: UMass Amherst, Amherst, MA (2027-2030) Location: Northborough / Bellingham / Wellesley, MA (2031-2036)")
+    assert PrimeTimeCollector.page_sites(mid) == [(None, "Northborough", "MA"), (None, "Bellingham", "MA"), (None, "Wellesley", "MA"),
+                                                  ("UMass Amherst", "Amherst", "MA")]
+
+
+def test_primetime_directions_block_is_not_another_site_and_day_notes_are_dropped(monkeypatch):
+    t = ("Event Overview Oct. 25th, 2026 DATE Location Rogers Field, Devens, MA Divisions Boys ... Location & Directions "
+         "Rogers Field 1 Jackson Rd, Devens, MA 01434")
+    assert PrimeTimeCollector.page_sites(t) == [("Rogers Field", "Devens", "MA")]
+    c = TrilogyCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {
+        c.URL: '<a href="https://trilogylacrosse.com/events/vdc/">Veterans Day Classic Nov 14 + 15, 2026 | NJ</a>',
+        "https://trilogylacrosse.com/events/vdc/": "<h3>Locations</h3><p>Mercer County Park &amp; Community College</p><p>SAT: 2032 + 2034</p>"
+            "<p>SUN: 2027</p><p>West Windsor, NJ</p><p>Bucks Mill Park</p><p>SAT ONLY: 2035 &amp; 2036 / 37 (10v10 &amp; 7v7)</p>"
+            "<p>Colts Neck, NJ</p><h3>Divisions</h3>"})
+    assert [x[:3] for x in c.collect()[0].sites] == [("Mercer County Park & Community College", "West Windsor", "NJ"), ("Bucks Mill Park", "Colts Neck", "NJ")]
+
+
+def test_primetime_directions_sections_are_the_site_list():
+    t = ("Event Overview Date June 19th & 20th, 2027 Location URI & Cross Point Park Divisions 2031 - 2036 ... Location & Directions "
+         "University of RI 45 Upper College Rd, Kingston, Ri 02881 Brawlin At The Beach Location & Directions Cross Point Park 34 Camp "
+         "Thomas Wy., North Kingstown, RI 02852 Media Center")
+    assert PrimeTimeCollector.page_sites(t) == [("University of RI", "Kingston", "RI"), ("Cross Point Park", "North Kingstown", "RI")]
+    b = ("Event Overview June 12th & 13th, 2027 DATE Baltimore, MD Location Divisions 2028 - 2035 Location: Baltimore, MD ... "
+         "Location & Directions Calvert Hall 8102 Lasalle Rd, Towson, MD 21286 Elevate")
+    assert PrimeTimeCollector.page_sites(b) == [("Calvert Hall", "Towson", "MD")]
+
+
+def test_directions_without_a_street_number_fall_back_to_the_overview():
+    t = ("Event Overview Oct. 25th, 2026 DATE Location Rogers Field, Devens, MA Divisions Boys ... Location & Directions "
+         "Rogers Field, Devens, MA 01434 Laxtoberfest Media Center Stay updated and relive it, Boston, MA")
+    assert PrimeTimeCollector.page_sites(t) == [("Rogers Field", "Devens", "MA")]
+
+
+def test_street_addresses_go_with_their_venue_not_a_hotel():
+    from adapters.misc_sites import pick_address
+    page = ("Location DE Turf Sports Complex 4000 Bay Road Frederica, DE 19946 Fees ... Hotels Hampton Inn 1568 N DuPont Hwy, "
+            "Dover, DE 19901 Courtyard 655 N DuPont Hwy, Frederica, DE 19946")
+    assert pick_address(page, "Frederica", "DE", "DE Turf Sports Complex") == "4000 Bay Road Frederica, DE 19946"
+    assert pick_address(page, "Frederica", "DE") is None                      # two addresses in town, no venue to tell them apart
+    assert pick_address("Venue & Location Santa Barbara Polo Club 3300 Via Real, Carpinteria, CA 93013", "Carpinteria", "CA",
+                        "Santa Barbara Polo Club") == "3300 Via Real, Carpinteria, CA 93013"
+    from collectors.woodgoods_lacrosse import to_common
+    from core.model import Event
+    row = to_common(Event(organizer="Victory", name="Gold Cup", start_date=dt.date(2026, 11, 7), venue="DE Turf Sports Complex",
+                          city="Frederica", state="DE", address="4000 Bay Road Frederica, DE 19946"), "victory")
+    assert row["raw"]["address"] == "4000 Bay Road Frederica, DE 19946"
+
+
+def test_lowercase_state_and_address_in_another_town():
+    from adapters.misc_sites import pick_address
+    t = ("Location & Directions University of RI 45 Upper College Rd, Kingston, Ri 02881 Brawlin At The Beach Location & Directions "
+         "Cross Point Park 34 Camp Thomas Wy., North Kingstown, RI 02852")
+    assert pick_address(t, "Kingston", "RI", "University of RI") == "45 Upper College Rd, Kingston, RI 02881"
+    assert pick_address(t, "North Kingstown", "RI", "Cross Point Park") == "34 Camp Thomas Wy., North Kingstown, RI 02852"
+
+
+def test_address_found_after_a_later_mention_of_the_venue():
+    from adapters.misc_sites import pick_address
+    t = ("Gold Cup returns to DE Turf Sports Complex for another great weekend of lacrosse with teams from across the country, "
+         "college coaches, vendors and more fun than ever before at the best facility on the east coast, see you there soon. "
+         "Date & Time November 7 - 8, 2026 Location DE Turf Sports Complex 4000 Bay Road Frederica, DE 19946 Fees")
+    assert pick_address(t, "Frederica", "DE", "DE Turf Sports Complex") == "4000 Bay Road Frederica, DE 19946"
+
+
+def test_leagueapps_locations_section_lists_every_site():
+    t = ("LOCATIONS Session I: Saturday, November 14th Cedar Lane Park: 1100 Cedar Ln, Bel Air, MD 21015 Calvert Regional Park: "
+         "304 Brick Meeting House Road, North East MD Session II: Sunday, November 15th Cedar Lane Park: 1100 Cedar Ln, Bel Air, "
+         "MD 21015 Calvert Regional Park: 304 Brick Meeting House Road, North East MD COST")
+    sites = LeagueAppsCollector.location_sites(t)
+    assert [(v, c, st) for v, c, st, _ in sites] == [("Cedar Lane Park", "Bel Air", "MD"), ("Calvert Regional Park", "North East", "MD")]
+    t2 = ("LOCATIONS: North Worcester Sports Complex 9906 Buckingham Ln, Berlin, MD 21811 MAYS (Mid Atlantic Youth Sportsplex) "
+          "6605 Morris Road Pittsville, MD 21850 Northside Park 200 125th St, Ocean City, MD 21842 SCHEDULE 2027")
+    assert [v for v, *_ in LeagueAppsCollector.location_sites(t2)] == ["North Worcester Sports Complex",
+                                                                      "MAYS (Mid Atlantic Youth Sportsplex)", "Northside Park"]
+
+
+def test_venue_sections_list_every_site():
+    from adapters.misc_sites import section_sites
+    hogan = ("TEAM LIST LOCATIONS & DIRECTIONS Maryland Soccerplex 2028 & 2029 Divisions 18031 Central Park Circle, Boyds, MD 20841 "
+             "Liberty Sports Park 2030 Division 220 Prince George's Boulevard Upper Marlboro, MD 20774 Annapolis High School 2032 "
+             "Division 2028 - 2031 Semi Final Games 2700 Riva Road, Annapolis, MD 21401 Schedule COMING SOON! Hotels")
+    assert [(v, c) for v, c, _, _ in section_sites(hogan)] == [("Maryland Soccerplex", "Boyds"), ("Liberty Sports Park", "Upper Marlboro"),
+                                                                ("Annapolis High School", "Annapolis")]
+    victory = ("04 Maps & Locations Westtown School- FIELD MAP 975 Westtown Rd, West Chester, PA 19382 West Chester University - "
+               "FIELD MAP 855 S New Street, West Chester, PA 19383 05 Event Headquarters")
+    assert [v for v, *_ in section_sites(victory)] == ["Westtown School", "West Chester University"]
+    pll = ("Field Location(s) NORTH ELBA ATHLETIC FIELDS (1-7 + HQ) LACROSSE FIELDS WAY, LAKE PLACID, NY 12946 SARANAC LAKE HIGH "
+           "SCHOOL (12) 79 CANARAS AVE, SARANAC LAKE, NY 12983 HORSE SHOW GROUNDS (8-11) 5514 CASCADE ROAD, LAKE PLACID, NY 12946 "
+           "Tourney Quick Links")
+    assert [c for _, c, _, _ in section_sites(pll)][-2:] == ["Saranac Lake", "Lake Placid"]
+
+
+def test_section_sites_dedupe_spellings_and_drop_leftover_labels():
+    from adapters.misc_sites import section_sites, addr_key
+    assert addr_key("1100 Cedar Lane, Bel Air, MD") == addr_key("1100 Cedar Ln, Bel Air, MD 21015")
+    t = ("MAP & DIRECTIONS Maryland State Fairgrounds 2200 York Rd, Lutherville-Timonium, MD 21093. FAIRGROUNDS SITE MAP Copperplex "
+         "2007 Cedar Dr. Edgewood, MD 21040 COPPERPLEX SITE MAP EVENT DETAILS")
+    assert [v for v, *_ in section_sites(t)] == ["Maryland State Fairgrounds", "Copperplex"]
+    t2 = ("Facility Information MERCER COUNTY PARK/MERCER COUNTY COMMUNITY COLLEGE The park and college fields are next to each "
+          "other but have different parking areas. Mercer County Park: 1638 Old Trenton Rd, West Windsor Township NJ, 08550 Mercer County Community "
+          "College 1200 Old Trenton Rd. West Windsor, NJ 08550 2ND LOCATION TBD Event Resources")
+    assert [v for v, *_ in section_sites(t2)] == ["Mercer County Park", "Mercer County Community College"]

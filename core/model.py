@@ -183,7 +183,8 @@ class Event:
     team_count: Optional[str] = None
     college_coaches: Optional[int] = None   # recruiters attending (a showcase signal), never a team count
     date_note: Optional[str] = None          # set when the date is not exactly what the site printed (a corrected year)
-    sites: list = field(default_factory=list)  # [(venue, city, state), ...] when the organizer lists several venues
+    address: Optional[str] = None            # street address as the site prints it ('4000 Bay Road Frederica, DE 19946')
+    sites: list = field(default_factory=list)  # [(venue, city, state[, address]), ...] when the organizer lists several venues
     vendor_fee: Optional[str] = None
     event_type: str = "tournament"
     source_url: Optional[str] = None

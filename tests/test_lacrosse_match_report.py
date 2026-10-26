@@ -88,7 +88,8 @@ def test_badges_and_descriptions(tmp_path):
                                 org("Victory Tide", D(60), "Little River", "SC")],
                 history=[{"id": "h1", "start_date": last_year.isoformat()}])
     assert rows["Empire of The Sun"]["badge"] == "🟢 Confirmed · organizer website"
-    assert rows["Bama Bash"]["badge"] == "🔴 Date wrong · organizer says " + L.fmt_dates(D(200), D(200))
+    assert rows["Bama Bash"]["badge"].startswith("🔴 Date corrected · app guessed ")
+    assert rows["Bama Bash"]["badge"].endswith("organizer says " + L.fmt_dates(D(200), D(200)))
     assert rows["Bama Bash"]["badge_description"] == "Organizer might have changed the date"
     assert rows["Victory Tide"]["badge"].startswith("🔵 New")
     assert L.fmt_dates("2027-06-19", "2027-06-20") == "Jun 19–20, 2027"
@@ -105,7 +106,7 @@ def test_confirmed_needs_the_place_too(tmp_path):
                                 org("Winter Classic", D(40), "Henderson", "NV", organizer="Adrenaline")])
     assert rows["Gold Cup"]["status"] == "CONFIRMED"
     assert rows["BlackJack Classic"]["status"] == "PLACE DIFFERS"
-    assert rows["BlackJack Classic"]["badge"] == "🟠 Place differs · organizer says Henderson, NV"
+    assert rows["BlackJack Classic"]["badge"] == "🟠 Place corrected · sheet had Las Vegas, NV, organizer says Henderson, NV"
     assert rows["Winter Classic"]["status"] == "DATE CONFIRMED"
 
 
@@ -151,3 +152,61 @@ def test_same_organizer_alone_is_not_a_match_but_same_words_are(tmp_path):
                                 org("Girls Fall Prelim", D(20), "Conshohocken", "PA", organizer="APEX")])
     assert rows["Boys Apex Summer Invitational High School"]["status"] == "NEW"
     assert rows["Girls Fall Prelim"]["status"] == "CONFIRMED"
+
+
+def test_organizer_rows_already_in_the_app_are_not_matched_against_themselves(tmp_path):
+    own = {**org("Victory Tide", D(60), "Little River", "SC"), "source": "wg-victory", "status": "new", "dedupe_key": "wg-victory:victory-tide"}
+    rows = _run(tmp_path, [own], [org("Victory Tide", D(60), "Little River", "SC")])
+    assert rows["Victory Tide"]["status"] == "NEW"
+
+
+def test_badge_records_pair_new_and_one_per_event(tmp_path):
+    app = [ph("Empire of the Sun 2025", D(30), "Panama City Beach", "FL", "h2"),
+           {**org("Victory Tide", D(60), "Little River", "SC"), "source": "wg-victory", "status": "new",
+            "dedupe_key": "wg-victory:victory-tide"},
+           {**org("Empire of The Sun", D(30), "Panama City Beach", "FL"), "source": "wg-victory", "status": "new",
+            "dedupe_key": "wg-victory:empire-of-the-sun"}]
+    scraped = [{**org("Empire of The Sun", D(30), "Panama City Beach", "FL"), "source": "wg-victory", "source_event_id": "empire-of-the-sun"},
+               {**org("Victory Tide", D(60), "Little River", "SC"), "source": "wg-victory", "source_event_id": "victory-tide"}]
+    _run(tmp_path, app, scraped)
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert recs["recurrence:h2"]["status"] == "confirmed" and recs["recurrence:h2"]["organizer_dedupe_key"] == "wg-victory:empire-of-the-sun"
+    assert recs["wg-victory:empire-of-the-sun"]["status"] == "confirmed"                 # both copies green
+    assert recs["wg-victory:empire-of-the-sun"]["matched_dedupe_key"] == "recurrence:h2"
+    assert recs["wg-victory:victory-tide"]["status"] == "new" and recs["wg-victory:victory-tide"]["badge"].startswith("🔵 New")
+    assert len(recs) == 3
+
+
+def test_best_status_wins_and_sending_posts_batches(monkeypatch):
+    recs = [{"app_dedupe_key": "x", "status": "review"}, {"app_dedupe_key": "x", "status": "confirmed"}, {"app_dedupe_key": "y", "status": "new"}]
+    assert {r["app_dedupe_key"]: r["status"] for r in L.best_per_event(recs)} == {"x": "confirmed", "y": "new"}
+    sent = []
+    class Resp:
+        def __init__(self, body): self.body = body
+        def read(self): return json.dumps({"saved": len(self.body["confirmations"]), "skipped": 0, "errors": []}).encode()
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def fake_urlopen(req, timeout=0, context=None):
+        body = json.loads(req.data); sent.append((req.full_url, req.headers.get("X-ingest-key"), body["source"], len(body["confirmations"])))
+        return Resp(body)
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("INGEST_URL", "https://app.test/api/public/ingest"); monkeypatch.setenv("INGEST_KEY", "test-key")
+    L.send_checks([{"app_dedupe_key": str(i), "status": "confirmed"} for i in range(120)], size=50)
+    assert [s[3] for s in sent] == [50, 50, 20] and all(s[2] == "organizer-check" and s[1] == "test-key" for s in sent)
+
+
+def test_organizer_row_is_green_and_both_halves_of_an_event_get_the_badge(tmp_path):
+    hist = (TODAY + dt.timedelta(days=40 - 364)).isoformat()
+    sat = ph("Veterans Day Classic: SATURDAY 2031-2035/6", D(33), "West Windsor", "NJ", "hs")
+    sun = ph("Veterans Day Classic: SUNDAY 2027-2030", D(34), "West Windsor", "NJ", "hu")
+    own = {**org("Veterans Day Classic", D(40), "West Windsor", "NJ", organizer="Trilogy"), "source": "wg-trilogy",
+           "status": "new", "dedupe_key": "wg-trilogy:vdc"}
+    scraped = [{**org("Veterans Day Classic", D(40), "West Windsor", "NJ", organizer="Trilogy"), "source": "wg-trilogy",
+                "source_event_id": "vdc"}]
+    _run(tmp_path, [sat, sun, own], scraped, history=[{"id": "hs", "start_date": hist}, {"id": "hu", "start_date": hist}])
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert recs["recurrence:hs"]["status"] == recs["recurrence:hu"]["status"] == "date_moved"
+    assert recs["recurrence:hs"]["badge"].startswith("🔴 Date corrected · app guessed")
+    assert recs["wg-trilogy:vdc"]["status"] == "confirmed" and recs["wg-trilogy:vdc"]["badge"] == "🟢 Confirmed · organizer website"
+    assert "corrects the app's date" in recs["wg-trilogy:vdc"]["badge_description"]

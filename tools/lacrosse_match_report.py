@@ -92,6 +92,9 @@ def load_app(export_dir, today):
     for line in open(export_dir / "event_candidates.jsonl"):
         r = json.loads(line)
         if not (r.get("sport") or "").lower().startswith("lacrosse") or r.get("status") == "duplicate": continue
+        # the organizer-site rows themselves (wg- scrapers, org- crawler) are what is being checked, not something to
+        # check them against: since the 2026-10-26 run they are in the app too
+        if str(r.get("source") or "").startswith(("wg-", "org-")): continue
         s, e = _date(r.get("start_date")), _date(r.get("end_date"))
         if not s or (e or s) < today: continue
         r["_kind"] = SOURCE_KIND.get(r.get("source"), "other")
@@ -102,7 +105,7 @@ def load_app(export_dir, today):
 class Venues:
     """The app's venue table, to give scraped venue names the same ids and coordinates the app's rows carry."""
     def __init__(self, path):
-        self.by_state = defaultdict(list)
+        self.by_state, self.last_address = defaultdict(list), None
         if not path.exists(): return
         for line in open(path):
             v = json.loads(line)
@@ -122,6 +125,8 @@ class Venues:
         v = hits[0]
         try: pt = (float(v["lat"]), float(v["lng"]))
         except (TypeError, ValueError, KeyError): pt = None
+        a = (v.get("address") or "").strip()
+        self.last_address = a if re.match(r"\d{1,6}\s+\S", a) else None     # a street address, not 'River City Sports Complex, Midlothian, VA'
         return v["id"], pt, v["state"].upper()
 
 
@@ -167,6 +172,7 @@ def series_key(r):
     """Rows that are one event on one weekend: 'Fall Brawl – Site 1/2/3', 'Western Shootout 2026 - Boys/- Girls'."""
     n = re.sub(r"\s*[-–—]\s*site\s*\w+.*$|\(\s*site\s*\w+\s*\)", " ", r.get("name") or "", flags=re.I)
     n = re.sub(r"\b(boys?|girls?|coed|(?:19|20)\d\d)\b", " ", n, flags=re.I)
+    n = re.sub(r"\b(?:fri|satur|sun)day\b|\b(?:fri|sat|sun)\b", " ", n, flags=re.I)   # 'Veterans Day Classic: SATURDAY/SUNDAY ...'
     s0 = _date(r.get("start_date"))
     week = s0 - dt.timedelta(days=s0.weekday()) if s0 else None
     return r["_kind"], canon_org(r.get("organizer_name")), " ".join(sorted(core_tokens(n))), week
@@ -203,6 +209,34 @@ def same_words(a, b):
     'championship(s)' are set aside (at least two words left)."""
     wa, wb = core_tokens(match_name(a)) - PLAIN_WORDS, core_tokens(match_name(b)) - PLAIN_WORDS
     return len(wa) >= 2 and wa == wb
+
+
+def status_for(kind, appr, r, res, off, pc):
+    """(status, explanation, extra tags) for one app row against one organizer event."""
+    label = KIND_LABEL.get(kind, kind)
+    if res["decision"] != "confirmed":
+        return "REVIEW", f"Possible match with {label}; the evidence is weak, check by hand.", []
+    if abs(off) <= 2 and pc is True:                 # same event, same weekend, same place: everything matches
+        return "CONFIRMED", {"placeholder": "The organizer site lists it the same weekend at the same place: the app's "
+                                            "placeholder (guessed from last year) is real. Safe to show as confirmed.",
+                             "tm": "Also listed on Tourney Machine; both agree on the weekend and the place.",
+                             "sheet": "Matches App data(manual-lacrosse-sheet); the organizer site agrees on the weekend and "
+                                      "the place."}.get(kind, "Matches an app row."), []
+    if abs(off) <= 2 and pc:
+        return "PLACE DIFFERS", (f"Same event and weekend, but {label} has {place(appr) or 'another place'} and the organizer "
+                                 f"site says {place(r)} ({pc}). Show the organizer's place."), []
+    if abs(off) <= 2:
+        return "DATE CONFIRMED", (f"The organizer site confirms the weekend, but one side gives no town ({place(appr) or 'nothing'} "
+                                  f"vs {place(r) or 'nothing'}), so the place could not be checked."), []
+    if kind == "placeholder" and res.get("alt") and appr.get("_alt_start") and abs((r["start_date"] - appr["_alt_start"]).days) <= 2:
+        return "DATE MOVED", (f"The app shows {appr['start_date']}: last year's date ({appr['_last_year']}) + 371 days, by week "
+                              f"number. The organizer site says {r['start_date']}, the same weekend as last year. The app's date "
+                              f"is wrong; show the organizer's."), ["APP DATE A WEEK LATE (week-number rule)"]
+    if kind == "placeholder":
+        return "DATE MOVED", (f"The app guessed {appr['start_date']} from last year's Tourney Machine event; the organizer site "
+                              f"says {r['start_date']}. The guessed date is wrong; show the organizer's."), ["ORGANIZER CHANGED THE WEEKEND"]
+    return "DATE CONFLICT", (f"{label[0].upper() + label[1:]} says {appr['start_date']}, the organizer site says {r['start_date']}. "
+                             f"Don't show either as certain until checked."), []
 
 
 def score_pair(app_ev, scr_ev, same_town, same_venue=False):
@@ -249,6 +283,14 @@ def same_venue(a, b):
     s1, s2 = set(normalize_venue(a).split()), set(normalize_venue(b).split())
     if not s1 or not s2: return None
     return s1 <= s2 or s2 <= s1 or len(s1 & s2) / len(s1 | s2) >= 0.6
+
+
+def app_address(r):
+    """The app row's street address: raw.address, else the first listing venue's address (Tourney Machine)."""
+    a = (r.get("raw") or {}).get("address") if isinstance(r.get("raw"), dict) else None
+    if not a:
+        a = next((v.get("address") for v in (r.get("venues") or []) if isinstance(v, dict) and v.get("address")), None)
+    return a or ""
 
 
 def place(r):
@@ -302,16 +344,23 @@ def badge(status, r, a, res, off, pc):
     if status == "DATE CONFIRMED":
         return "🟢 Date confirmed · place not checked", ("Organizer website confirms the date; one side gives no town, so the "
                                                         "place could not be compared")
+    had = {"placeholder": "app guessed", "sheet": "sheet had", "tm": "Tourney Machine had"}.get((a or {}).get("_kind"), "app had")
     if status == "PLACE DIFFERS":
-        return (f"🟠 Place differs · organizer says {place(r)}",
+        app_place = ", ".join(x for x in _city_state(a) if x) or place(a) or "another place"
+        return (f"🟠 Place corrected · {had.replace('guessed', 'had')} {app_place}, organizer says {place(r)}",
                 "Same event and weekend, but the organizer's website lists a different place; the organizer's site is the "
                 "real source")
-    if status == "DATE MOVED":
-        return f"🔴 Date wrong · organizer says {org_dates}", "Organizer might have changed the date"
-    if status == "DATE CONFLICT":
-        return (f"🔴 Date wrong · organizer says {org_dates}",
+    if status in ("DATE MOVED", "DATE CONFLICT"):
+        # the app now shows the organizer's dates, so the badge says what it replaced: 'app guessed Nov 7'
+        app_dates = fmt_dates(a.get("start_date"), a.get("end_date"))
+        org_y, app_y = str(r.get("start_date"))[:4], str(a.get("start_date"))[:4]
+        if org_y == app_y:
+            app_dates = re.sub(r",\s*\d{4}$", "", app_dates)
+            org_dates = org_dates
+        desc = ("Organizer might have changed the date" if status == "DATE MOVED" else
                 f"{SOURCE_NAME.get(a.get('_kind'), 'The app')} disagrees with the organizer's website; the organizer's "
                 f"site is the only real source")
+        return f"🔴 Date corrected · {had} {app_dates}, organizer says {org_dates}", desc
     if status == "REVIEW":
         return "🟡 Possible match, check", review_reason(res, off, pc)
     if status == "NOT ON ORGANIZER SITE":
@@ -328,23 +377,31 @@ def main(argv=None):
     ap.add_argument("--export-dir", type=pathlib.Path)
     ap.add_argument("--scraped", type=pathlib.Path, help="jsonl of woodgoods_lacrosse rows from an earlier run")
     ap.add_argument("--out", type=pathlib.Path)
-    a = ap.parse_args(argv)
+    ap.add_argument("--send-one", metavar="DEDUPE_KEY", help="send the badge record(s) for one app event to the app (a test)")
+    ap.add_argument("--send", action="store_true", help="send every badge record to the app")
+    args = ap.parse_args(argv)
     today = dt.date.today()
-    export = a.export_dir or next(p for p in (HOME / "backup/db/fresh", HOME / "backup/db/current") if (p / "event_candidates.jsonl").exists())
-    out = a.out or HOME / "reports" / f"lacrosse_match_{today}.csv"
+    export = args.export_dir or next(p for p in (HOME / "backup/db/fresh", HOME / "backup/db/current") if (p / "event_candidates.jsonl").exists())
+    out = args.out or HOME / "reports" / f"lacrosse_match_{today}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    scr = scraped_rows(a.scraped, today)
-    if not a.scraped:                                   # keep what was scraped so a rerun can skip the 5-minute crawl
+    scr = scraped_rows(args.scraped, today)
+    if not args.scraped:                                   # keep what was scraped so a rerun can skip the 5-minute crawl
         with open(out.with_suffix(".scraped.jsonl"), "w") as f:
             for r in scr: f.write(json.dumps(r, default=str) + "\n")
     app = load_app(export, today)
     venues = Venues(export / "venues.jsonl")
     for r in scr:
         city, st = _city_state(r)
+        venues.last_address = None
         vid, pt, vst = venues.resolve(r.get("venue_name"), city, st)
         r["venue_ids"], r["venues"] = ([vid] if vid else []), ([{"lat": pt[0], "long": pt[1]}] if pt else [])
         if vst and not st: r["state"], r["_state_from_venue"] = vst, True
+        # the street address: the organizer's own page first, else the app's venue list when the venue name matches
+        # exactly one venue there (MLT never prints addresses)
+        own = (r.get("raw") or {}).get("address")
+        r["_address"], r["_address_source"] = ((own, "organizer website") if own else
+                                               (venues.last_address, "app venue list") if vid and venues.last_address else ("", ""))
     for r in app:                                       # placeholders carry no organizer; their names often do
         if not r.get("organizer_name") and org_from_name(r.get("name")): r["organizer_name"] = org_from_name(r["name"])
     hist = history_starts([export, HOME / "backup/db/current"],
@@ -415,10 +472,12 @@ def main(argv=None):
                     if i not in placed and kind in matches[i]:
                         extra_site[i] = matches[i].pop(kind)[0][0]
 
-    cols = ["status", "badge", "badge_description", "tags", "details", "organizer", "event", "start", "end", "place", "organizer_url",
-            "app_match", "app_event", "app_start", "app_end", "app_place", "app_guessed_from", "days_off", "match_score",
+    cols = ["status", "badge", "badge_description", "tags", "details", "organizer", "event", "start", "end", "place", "address",
+            "address_source", "organizer_url", "app_match", "app_event", "app_start", "app_end", "app_place", "app_address", "app_guessed_from",
+            "days_off", "match_score",
             "evidence", "also_in_app", "data_flags", "app_dedupe_key", "app_listing_url"]
-    lines, counts = [], defaultdict(int)
+    lines, counts, checks = [], defaultdict(int), []
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     for i, r in enumerate(scr):
         m = matches.get(i, {})
         tags, flags = [], data_flags(r, today)
@@ -435,39 +494,8 @@ def main(argv=None):
             j, res = max(m[primary], key=lambda x: (place_check(app[x[0]], r, x[1]) is True, rank(x[0], i, x[1])))
             off = (r["start_date"] - A[j].start).days
             pc = place_check(app[j], r, res)
-            label = KIND_LABEL.get(primary, primary)
-            if res["decision"] != "confirmed":
-                status, means = "REVIEW", f"Possible match with {label}; the evidence is weak, check by hand."
-            elif abs(off) <= 2 and pc is True:
-                status = "CONFIRMED"                     # same event, same weekend, same place: everything matches
-                means = {"placeholder": "The organizer site lists it the same weekend at the same place: the app's placeholder "
-                                        "(guessed from last year) is real. Safe to show as confirmed.",
-                         "tm": "Also listed on Tourney Machine; both agree on the weekend and the place.",
-                         "sheet": "Matches App data(manual-lacrosse-sheet); the organizer site agrees on the weekend and the "
-                                  "place."}.get(primary, "Matches an app row.")
-            elif abs(off) <= 2 and pc:
-                status = "PLACE DIFFERS"
-                means = (f"Same event and weekend, but {label} has {place(app[j]) or 'another place'} and the organizer site says "
-                         f"{place(r)} ({pc}). Show the organizer's place.")
-            elif abs(off) <= 2:
-                status = "DATE CONFIRMED"
-                means = (f"The organizer site confirms the weekend, but one side gives no town ({place(app[j]) or 'nothing'} vs "
-                         f"{place(r) or 'nothing'}), so the place could not be checked.")
-            elif primary == "placeholder" and res["alt"] and abs((r["start_date"] - app[j]["_alt_start"]).days) <= 2:
-                status = "DATE MOVED"
-                tags.append("APP DATE A WEEK LATE (week-number rule)")
-                means = (f"The app shows {app[j]['start_date']}: last year's date ({app[j]['_last_year']}) + 371 days, by week "
-                         f"number. The organizer site says {r['start_date']}, the same weekend as last year. The app's date is "
-                         f"wrong; show the organizer's.")
-            elif primary == "placeholder":
-                status = "DATE MOVED"
-                tags.append("ORGANIZER CHANGED THE WEEKEND")
-                means = (f"The app guessed {app[j]['start_date']} from last year's Tourney Machine event; the organizer site says "
-                         f"{r['start_date']}. The guessed date is wrong; show the organizer's.")
-            else:
-                status = "DATE CONFLICT"
-                means = (f"{label[0].upper() + label[1:]} says {app[j]['start_date']}, the organizer site says {r['start_date']}. "
-                         f"Don't show either as certain until checked.")
+            status, means, extra = status_for(primary, app[j], r, res, off, pc)
+            tags += extra
             if status not in ("PLACE DIFFERS", "DATE CONFIRMED"):     # those statuses already say it
                 if pc is not True and pc is not None: tags.append(f"VENUE DIFFERS ({pc})")
                 elif pc is None and res["decision"] == "confirmed": tags.append("PLACE NOT CHECKED (no town on one side)")
@@ -484,14 +512,27 @@ def main(argv=None):
         lines.append({"status": status, "badge": bdg, "badge_description": bdesc, "tags": "; ".join(tags), "details": means,
                       "organizer": r.get("organizer_name"),
                       "event": r["name"], "start": r["start_date"], "end": r["end_date"], "place": place(r),
+                      "address": r["_address"], "address_source": r["_address_source"],
                       "organizer_url": r.get("listing_url"), "app_match": KIND_LABEL.get(primary, primary) if primary else "",
                       "app_event": a.get("name", ""), "app_start": a.get("start_date", ""), "app_end": a.get("end_date", ""),
-                      "app_place": place(a) if a else "",
+                      "app_place": place(a) if a else "", "app_address": app_address(a) if a else "",
                       "app_guessed_from": f"last year {a['_last_year']}" if a.get("_last_year") else "",
                       "days_off": (r["start_date"] - A[j].start).days if j is not None else "",
                       "match_score": res["score"] if res else "", "evidence": "; ".join(res["reasons"]) if res else "",
                       "also_in_app": "; ".join(f"{KIND_LABEL.get(k, k)}: {app[jj]['name']} ({app[jj]['start_date']})" for k, jj in others),
                       "data_flags": "; ".join(flags), "app_dedupe_key": a.get("dedupe_key", ""), "app_listing_url": a.get("listing_url", "")})
+        checks += check_records(status, bdg, bdesc, means, tags, r, a, res, A[j].start if j is not None else None, now)
+        # the other halves of the same event ('Veterans Day Classic: SUNDAY ...' next to '...: SATURDAY ...') get their
+        # own badge, unless they sit at a different place (another site of the event, matched by its own organizer row)
+        if primary:
+            for jj, rr in m[primary]:
+                pcj = place_check(app[jj], r, rr)
+                if jj == j or isinstance(pcj, str):
+                    continue
+                offj = (r["start_date"] - A[jj].start).days
+                stj, meansj, extraj = status_for(primary, app[jj], r, rr, offj, pcj)
+                bj, dj = badge(stj, r, app[jj], rr, offj, pcj)
+                checks += check_records(stj, bj, dj, meansj, extraj, r, app[jj], rr, A[jj].start, now, with_org=False)
 
     # sheet events of organizers we scrape that their own site does not list
     scraped_orgs = {canon_org(r.get("organizer_name")) for r in scr}
@@ -505,8 +546,10 @@ def main(argv=None):
                       "details": "In App data(manual-lacrosse-sheet), but the organizer's website doesn't list it (renamed, moved, cancelled "
                                  "or not posted yet). Don't show as confirmed.",
                       "app_match": KIND_LABEL["sheet"], "app_event": r["name"], "app_start": r.get("start_date"),
-                      "app_end": r.get("end_date"), "app_place": place(r), "app_dedupe_key": r.get("dedupe_key"),
+                      "app_end": r.get("end_date"), "app_place": place(r), "app_address": app_address(r),
+                      "app_dedupe_key": r.get("dedupe_key"),
                       "app_listing_url": r.get("listing_url")})
+        checks += check_records("NOT ON ORGANIZER SITE", bdg, bdesc, lines[-1]["details"], [], None, r, None, None, now)
 
     order = ["CONFIRMED", "DATE CONFIRMED", "PLACE DIFFERS", "DATE MOVED", "DATE CONFLICT", "REVIEW", "NOT ON ORGANIZER SITE",
              "NEW SITE", "NEW"]
@@ -517,7 +560,113 @@ def main(argv=None):
     print(f"organizer events {len(scr)}; app rows {len(app)} ({n_ph} placeholders) from {export}")
     print("  " + ", ".join(f"{k} {counts[k]}" for k in order if counts[k]))
     print(f"wrote {out}")
+
+    # the app's badges: one current check per app row; dry run always written, sending only when asked
+    checks = best_per_event(checks)
+    in_app = {json.loads(l).get("dedupe_key") for l in open(export / "event_candidates.jsonl")}
+    ready = [c for c in checks if c["app_dedupe_key"] in in_app]
+    held = len(checks) - len(ready)
+    path = out.with_suffix(".checks.json")
+    path.write_text(json.dumps(ready, indent=1, default=str))
+    print(f"badge records: {len(ready)} ready ({held} held back: their organizer row isn't in the app yet) -> {path}")
+    if args.send_one or args.send:
+        batch = [c for c in ready if c["app_dedupe_key"] == args.send_one or c.get("matched_dedupe_key") == args.send_one] if args.send_one else ready
+        if not batch:
+            sys.exit(f"no badge record for {args.send_one}")
+        send_checks(batch)
     return out
+
+
+STATUS_CODE = {"CONFIRMED": "confirmed", "DATE CONFIRMED": "date_confirmed", "PLACE DIFFERS": "place_differs",
+               "DATE MOVED": "date_moved", "DATE CONFLICT": "date_conflict", "REVIEW": "review",
+               "NOT ON ORGANIZER SITE": "not_on_organizer_site", "NEW": "new", "NEW SITE": "new"}
+STATUS_RANK = ["confirmed", "date_confirmed", "place_differs", "date_moved", "date_conflict", "review", "new", "not_on_organizer_site"]
+
+
+def check_records(status, bdg, bdesc, details, tags, r, a, res, app_start, now, with_org=True):
+    """The badge records for one report line: one for the app's row and one for the organizer's own wg- row, carrying the
+    same badge so both copies of a confirmed event show green. An organizer event the app didn't have gets only its own
+    wg- record (🔵 New); a sheet event the organizer doesn't list gets only the app's."""
+    code = STATUS_CODE[status]
+    org_key = f"{r['source']}:{r['source_event_id']}" if r else None
+    city, st = _city_state(r) if r else (None, None)
+    base = {"status": code, "badge": bdg, "badge_description": bdesc, "details": details,
+            "tags": [t for t in tags if t], "checked_at": now,
+            "organizer": (r or a or {}).get("organizer_name"),
+            "organizer_event_name": r["name"] if r else None,
+            "organizer_start": str(r["start_date"]) if r else None, "organizer_end": str(r.get("end_date") or r["start_date"]) if r else None,
+            "organizer_venue": r.get("venue_name") if r else None, "organizer_city": city, "organizer_state": st,
+            "organizer_address": (r.get("raw") or {}).get("address") if r else None,
+            "organizer_url": r.get("listing_url") if r else None}
+    out = []
+    if a:
+        out.append({**base, "app_dedupe_key": a["dedupe_key"], "organizer_dedupe_key": org_key,
+                    "app_start": a.get("start_date"), "guessed_from": str(a["_last_year"]) if a.get("_last_year") else None,
+                    "days_off": (r["start_date"] - app_start).days if r and app_start else None,
+                    "match_score": res["score"] if res else None})
+    if r and with_org:
+        rec = {**base, "app_dedupe_key": org_key, "matched_dedupe_key": a["dedupe_key"] if a else None,
+               "app_start": str(r["start_date"]), "days_off": (r["start_date"] - app_start).days if a and app_start else None,
+               "match_score": res["score"] if res else None}
+        if not a:                                    # the app had nothing for it
+            rec.update(status="new", badge="🔵 New · organizer website",
+                       badge_description="On the organizer's website; the app had no event for it")
+        elif code != "review":
+            # this row IS the organizer's website, so its own date and place are right whatever the app's copy got wrong
+            fixed = {"date_moved": " and corrects the app's date", "date_conflict": " and corrects the app's date",
+                     "place_differs": " and corrects the app's place"}.get(code, "")
+            rec.update(status="confirmed", badge="🟢 Confirmed · organizer website",
+                       badge_description=f"From the organizer's website; matches the app's event{fixed}")
+        out.append(rec)
+    return out
+
+
+def best_per_event(checks):
+    """One record per app_dedupe_key: when several organizer sites match one app row, the most certain status wins."""
+    best = {}
+    for c in checks:
+        k = c["app_dedupe_key"]
+        if k not in best or STATUS_RANK.index(c["status"]) < STATUS_RANK.index(best[k]["status"]):
+            best[k] = c
+    return list(best.values())
+
+
+def ingest_settings():
+    """INGEST_URL / INGEST_KEY from the environment, else ~/WoodGoodsAI/.ingest.env (never the repo)."""
+    env = {k: os.environ[k] for k in ("INGEST_URL", "INGEST_KEY") if os.environ.get(k)}
+    f = HOME / ".ingest.env"
+    if f.exists():
+        for line in f.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                env.setdefault(k.strip(), v.strip().strip('"'))
+    if not env.get("INGEST_KEY"):
+        sys.exit(f"INGEST_KEY missing: put INGEST_URL=... and INGEST_KEY=... in {f}")
+    return env.get("INGEST_URL", "https://opswg.lovable.app/api/public/ingest"), env["INGEST_KEY"]
+
+
+def send_checks(batch, size=50):
+    """POST {"source": "organizer-check", "confirmations": [...]} in batches; print what the app says it saved."""
+    import urllib.request, urllib.error, ssl
+    url, key = ingest_settings()
+    try:                                             # this Mac's Python has no system certificates; certifi's bundle works
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    saved = 0
+    for i in range(0, len(batch), size):
+        body = json.dumps({"source": "organizer-check", "confirmations": batch[i:i + size]}, default=str).encode()
+        req = urllib.request.Request(url, data=body, method="POST",
+                                     headers={"x-ingest-key": key, "Content-Type": "application/json", "user-agent": "woodgoods-collectors"})
+        try:
+            with urllib.request.urlopen(req, timeout=120, context=ctx) as resp:
+                reply = json.loads(resp.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            sys.exit(f"app refused the badge records: HTTP {e.code} {e.read()[:300]!r}")
+        saved += int(reply.get("saved") or 0)
+        print(f"  sent {len(batch[i:i + size])}: {reply}")
+    print(f"badge records saved: {saved} of {len(batch)}")
 
 
 if __name__ == "__main__":

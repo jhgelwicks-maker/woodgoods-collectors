@@ -144,16 +144,18 @@ class ApexCollector(BaseCollector):
                 start, end = parse_date_range(raw, default_year=datetime.date.today().year)
                 if not start:
                     continue
-                venue = None
+                venue = address = None
                 if loc_text:
-                    from adapters.misc_sites import place_from_text
+                    from adapters.misc_sites import place_from_text, addresses_in
                     venue, city, state = place_from_text(loc_text)
+                    found_addr = addresses_in(loc_text)         # 'University of Delaware 631 S College Ave Newark, DE 19716'
+                    address = found_addr[0][1] if found_addr else None
                 if not loc_text or not state:
-                    venue, (city, state) = None, self._location(blob)
+                    venue, address, (city, state) = None, None, self._location(blob)
                 out.append(Event(
                     organizer=self.organizer, name=name,
                     start_date=start, end_date=end, raw_date=raw,
-                    venue=venue, city=city, state=state, gender=gender,
+                    venue=venue, city=city, state=state, gender=gender, address=address,
                     event_type=etype, source_url=url,
                 ))
         return self._dedupe(out)
@@ -230,13 +232,22 @@ class BukuCollector(BaseCollector):
                 continue
             seen.add(key)
             # the venue is on the event's page: 'Venue & Location Santa Barbara Polo Club 3300 Via Real, Carpinteria, CA'
-            from adapters.misc_sites import best_link, page_text, venue_from_page, site_links, merge_page_place
+            from adapters.misc_sites import best_link, page_text, venue_from_page, site_links, merge_page_place, pick_address
             page = best_link(name, self._links.setdefault(url, site_links(self, url, r"buku\.events/[a-z0-9-]+/?(\?|$)")))
-            venue = None
+            venue = address = None
             if page:
-                venue, c, st = merge_page_place(c, st, venue_from_page(page_text(self, page)))
+                text = page_text(self, page)
+                pv, pc, pst = venue_from_page(text)
+                paddr = pick_address(text, pc, pst, pv) if pv else None
+                if paddr and pst == st:
+                    # 'Santa Barbara Polo Club 3300 Via Real, Carpinteria, CA 93013' on the Santa Barbara Fall Brawl page:
+                    # a street address is exact, so its town replaces the list's nearby one
+                    venue, c, address = pv, pc, paddr
+                else:
+                    venue, c, st = merge_page_place(c, st, (pv, pc, pst))
+                    address = pick_address(text, c, st, venue)
             out.append(Event(
-                organizer=self.organizer, name=name, venue=venue,
+                organizer=self.organizer, name=name, venue=venue, address=address,
                 start_date=start, end_date=end, raw_date=line,
                 city=c, state=st,
                 gender=normalize_gender(name),
@@ -273,15 +284,15 @@ class PLLPlayCollector(BaseCollector):
             towns = X.find_city_states(m.group(2))
             if towns:
                 c, st = towns[-1].rsplit(", ", 1)
-                out.append((m.group(1).strip(), c, st))
+                out.append((m.group(1).strip(), c, st, re.sub(r"\s+", " ", m.group(2)).strip()))
         if not out:
             m = re.search(r"\b([A-Z][A-Za-z .'-]+),\s*([A-Z]{2})\s*:\s*([A-Z][\w '&.-]{3,60}?)(?=\s+[A-Z][a-z]+\s+[a-z]|\s{2}|$)", text or "")
             if m:
-                out.append((m.group(3).strip(), m.group(1).strip(), m.group(2)))
+                out.append((m.group(3).strip(), m.group(1).strip(), m.group(2), None))
         return out
 
     def collect(self):
-        from adapters.misc_sites import best_link, page_text, merge_page_place
+        from adapters.misc_sites import best_link, page_text, merge_page_place, more_sites
         soup = self.soup(self.URL)
         import urllib.parse
         links = [urllib.parse.urljoin(self.URL, a["href"]) for a in soup.find_all("a", href=True)
@@ -308,16 +319,19 @@ class PLLPlayCollector(BaseCollector):
                 continue
             seen.add(key)
             page = best_link(name, links)
-            sites = self.page_sites(page_text(self, page)) if page else []
+            ptext = page_text(self, page) if page else ""
+            sites = self.page_sites(ptext) if page else []
+            sites = more_sites(ptext, sites, state)          # 'Field Location(s) NORTH ELBA ATHLETIC FIELDS ... SARANAC LAKE HS ...'
             sites = [x for x in sites if x[2] == (state or x[2])]       # a page about somewhere else is ignored
-            venue = None
+            venue = address = None
             if len(sites) == 1:
-                venue, city, state = merge_page_place(city, state, sites[0])
+                venue, city, state = merge_page_place(city, state, sites[0][:3])
+                address = sites[0][3] if venue else None
             elif sites:
-                venue = sites[0][0]                                   # several sites: each keeps its own town
+                venue, address = sites[0][0], sites[0][3]              # several sites: each keeps its own town and address
             out.append(Event(
                 organizer=self.organizer, name=name.title() if name.isupper() else name,
-                start_date=start, end_date=end, raw_date=m.group("date"),
+                start_date=start, end_date=end, raw_date=m.group("date"), address=address,
                 venue=venue, city=city, state=state, sites=sites if len(sites) > 1 else [],
                 gender=normalize_gender(divisions),
                 age_range=divisions or None,

@@ -43,8 +43,14 @@ def expand_sites(ev):
     """One Event per venue: 'Lax Fest – Site 1' at Farmingdale State College, 'Lax Fest – Site 2' at Destination KP,
     each with its own venue and town (the same '– Site N' naming as the app's manual sheet)."""
     if len(ev.sites) > 1:
-        # a listed site can itself name two venues in one town ('Brown University / Moses Brown School Providence, RI')
-        sites = [(vv, c, st or ev.state) for v, c, st in ev.sites for vv in (split_venues(v) or [v])]
+        # a listed site can itself name two venues in one town ('Brown University / Moses Brown School Providence, RI',
+        # 'Blandair Park/Oakland Mills High School 5750 Oakland Mills Road'): each piece keeps the address given for both
+        sites = []
+        for site in ev.sites:
+            v, c, st = site[:3]
+            addr = site[3] if len(site) > 3 else None
+            names = split_venues(v) or [v]
+            sites += [(vv, c, st or ev.state, addr) for vv in names]
     else:
         names = split_venues(ev.venue)
         if len(names) < 2:
@@ -52,9 +58,9 @@ def expand_sites(ev):
         sites = []
         for n in names:
             v, st = common_split(n)
-            sites.append((v, ev.city, st or ev.state))
-    return [dataclasses.replace(ev, name=f"{ev.name} – Site {k}", venue=v, city=c, state=st, sites=[])
-            for k, (v, c, st) in enumerate(sites, 1)]
+            sites.append((v, ev.city, st or ev.state, None))
+    return [dataclasses.replace(ev, name=f"{ev.name} – Site {k}", venue=v, city=c, state=st, address=a, sites=[])
+            for k, (v, c, st, a) in enumerate(sites, 1)]
 
 
 def common_split(text):
@@ -112,7 +118,9 @@ def to_common(ev, collector_slug):
         "official_url": ev.source_url,
         "raw": {"gender": ev.gender, "event_type": ev.event_type,
                 "raw_date": ev.raw_date, "collector": collector_slug,
-                "college_coaches": ev.college_coaches, "date_note": ev.date_note},
+                "college_coaches": ev.college_coaches, "date_note": ev.date_note,
+                # street address: the app's venue geocoder reads raw.address (Census) before falling back to the name
+                "address": ev.address},
     }
 
 
