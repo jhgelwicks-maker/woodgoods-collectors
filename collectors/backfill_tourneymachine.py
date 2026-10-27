@@ -152,6 +152,13 @@ def schedule_profile(game_log):
                     "hours": round((x["last"] + glen - x["first"]) / 60, 1)}
         row = {"date": f"{d[:4]}-{d[4:6]}-{d[6:]}", **pack(day), "sites": {k: pack(v) for k, v in day["sites"].items()}}
         out_days.append(row)
+    return {"game_length_min": glen, "days": out_days, **schedule_score(out_days)}
+
+
+def schedule_score(out_days):
+    """The 0-100 schedule quality of a run of days (each: hours, fields_active, fields_active_late, est_end), plus the
+    day-length and last-day figures behind it. Works on a whole event's days or on one venue's (venues[].schedule)."""
+    if not out_days: return None
     d1 = out_days[0]; last = out_days[-1]
     full_day_all = all(x["hours"] >= 8 for x in out_days)
     pm_share_last = round(min(1.0, last["fields_active_pm"] / d1["fields_active"]), 2) if d1["fields_active"] else None
@@ -163,7 +170,6 @@ def schedule_profile(game_log):
     peak = max(x["fields_active"] for x in out_days) or 1
     q_hours = 50 * min(1.0, sum(min(x["hours"], 9) * min(1.0, x["fields_active"] / peak) for x in out_days) / (9 * len(out_days)))
     if len(out_days) > 1:
-        end_min = last["last"] + glen if False else None
         end_h = int(last["est_end"][:2]) + int(last["est_end"][3:]) / 60
         end_credit = max(0.0, min(1.0, (end_h - 12.0) / 4.5))           # 12:00 -> 0, 16:30+ -> 1
         share_credit = max(0.0, min(1.0, (late_share_last or 0) / 0.5))  # 50%+ of Saturday's fields after 2:30 -> 1
@@ -172,7 +178,7 @@ def schedule_profile(game_log):
     else:
         q_last = 50 if d1["hours"] >= 8 else 25
     q = min(100, q_hours + q_last)
-    return {"game_length_min": glen, "days": out_days, "day_count": len(out_days),
+    return {"day_count": len(out_days),
             "day1_hours": d1["hours"], "last_day_hours": last["hours"], "last_day_end": last["est_end"],
             "last_day_pm_field_share": pm_share_last, "last_day_late_field_share": late_share_last, "full_day_all_days": full_day_all,
             "field_hours": round(sum(x["fields_active"] * x["hours"] for x in out_days), 1),

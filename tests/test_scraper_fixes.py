@@ -226,6 +226,7 @@ def test_multi_venue_events_become_one_row_per_site(monkeypatch):
     assert [(r["name"], r["venue_name"]) for r in rows] == [("Lax Fest – Site 1", "Farmingdale State College"),
                                                             ("Lax Fest – Site 2", "Destination KP")]
     assert len({r["source_event_id"] for r in rows}) == 2 and "site" not in rows[0]["source_event_id"]   # stable ids
+    assert rows[1]["venues"] == [{"venue_name": "Destination KP", "address": None, "city": None, "state": "NY"}]   # one venue per site row
     assert split_venues("Iron Peak Sports & Events") == ["Iron Peak Sports & Events"]
     assert split_venues("SUSA Orlin & Cohen Sports Complex & Destination KP") == ["SUSA Orlin & Cohen Sports Complex", "Destination KP"]
     assert split_venues("DE and PA") == ["DE and PA"]
@@ -445,3 +446,19 @@ def test_section_sites_dedupe_spellings_and_drop_leftover_labels():
           "other but have different parking areas. Mercer County Park: 1638 Old Trenton Rd, West Windsor Township NJ, 08550 Mercer County Community "
           "College 1200 Old Trenton Rd. West Windsor, NJ 08550 2ND LOCATION TBD Event Resources")
     assert [v for v, *_ in section_sites(t2)] == ["Mercer County Park", "Mercer County Community College"]
+
+
+def test_a_venue_is_never_sent_as_the_town():
+    from collectors.woodgoods_lacrosse import to_common
+    from collectors.common import normalize
+    from core.model import Event
+    mlt = normalize(to_common(Event(organizer="MLT", name="Spring Jam", start_date=dt.date(2027, 5, 8),
+                                    venue="Farmingdale State College", state="NY"), "mlt"))
+    assert (mlt["venue_name"], mlt["city"], mlt["state"], mlt["city_states"]) == ("Farmingdale State College", None, "NY", [])
+    cary = to_common(Event(organizer="MLT", name="Carolina Box", start_date=dt.date(2027, 2, 6), venue="NetSports Complex, Cary",
+                           state="NC"), "mlt")
+    assert (cary["venue_name"], cary["city"], cary["city_states"]) == ("NetSports Complex", "Cary", ["Cary, NC"])
+    assert cary["source_event_id"].endswith("netsports-complex-cary")          # id as before the split: no new row
+    nebc = to_common(Event(organizer="PrimeTime", name="Fall Classic", start_date=dt.date(2026, 10, 31), venue="NEBC",
+                           city="Northborough", state="MA"), "primetime")
+    assert (nebc["venue_name"], nebc["city"]) == ("NEBC", "Northborough")

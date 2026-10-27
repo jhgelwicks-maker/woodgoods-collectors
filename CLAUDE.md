@@ -95,8 +95,16 @@ collectors whose required key is missing.
   2026-10-08: R68000–185500 done, 101,717 history rows, 0 errors.
 - Lacrosse match report: `python tools/lacrosse_match_report.py` scrapes the 14 organizer sites and matches every event
   against the app's upcoming lacrosse rows (placeholders, Tourney Machine, App data(manual-lacrosse-sheet)) from the newest local export
-  (`backup/db/fresh`, else `current`). CSV in `~/WoodGoodsAI/reports/` with CONFIRMED / DATE MOVED / DATE CONFLICT / REVIEW /
+  (newest of `backup/db/current` and `fresh`). CSV in `~/WoodGoodsAI/reports/` with CONFIRMED / DATE MOVED / DATE CONFLICT / REVIEW /
   NOT ON ORGANIZER SITE / NEW plus tags. `--scraped <file>.scraped.jsonl` reruns without scraping.
+  Badge records (`<out>.checks.json`, sent with `--send` as `{"source":"organizer-check","confirmations":[...]}`) for a surely
+  matched event also tell the app which placeholders the organizer's site rows replace (`replaces` / `replaced_by`), last
+  year's Tourney Machine records to link (`history_ids`), and last year's numbers at each site's venue (`last_year_venue`,
+  added up over Saturday/Sunday tournaments of one weekend, with `schedule_quality` from the same `schedule_score()` every
+  Tourney Machine event gets, run on that venue's days only). Placeholders hidden in favour of an organizer row still
+  take part in matching (else confirmed events would turn back into NEW). Each run also retires leftover organizer rows:
+  OLD COPY (an earlier id of a row whose scraper later learned the venue; `replaced_by` the current row) and GONE FROM
+  ORGANIZER SITE (`retire: true`), only for upcoming rows of organizers the scrape reached. Organizer rows themselves carry `venues[]` (one venue per site).
   Found 2026-10-23: the app rolls placeholders forward by ISO week number (+371 days from 2026, which has 53 weeks), so
   7,851 of 9,176 placeholders (all sports) sit a week after the real weekend; organizers repeat at +364 days.
 - Database backup: `tools/backup_db.py` pulls every table from the app's read-only `GET /api/public/export`

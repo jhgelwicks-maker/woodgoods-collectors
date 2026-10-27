@@ -2,7 +2,7 @@
 
     python tools/lacrosse_match_report.py                        # scrape the 14 organizer sites now
     python tools/lacrosse_match_report.py --scraped rows.jsonl    # reuse rows saved by an earlier run
-    python tools/lacrosse_match_report.py --export-dir DIR        # app data (default: ~/WoodGoodsAI/backup/db/fresh, else current)
+    python tools/lacrosse_match_report.py --export-dir DIR        # app data (default: the newest of ~/WoodGoodsAI/backup/db/current and fresh)
 
 Every event an organizer site lists (adapters/, via woodgoods_lacrosse) is matched against the app's upcoming lacrosse
 rows from a local export: recurrence placeholders (dates guessed from last year's Tourney Machine event), live Tourney
@@ -24,6 +24,9 @@ event, plus one row per sheet event of a scraped organizer that its website no l
   NEW SITE             another venue of an event the app has, at a site the app doesn't list
   NEW                  on the organizer site, not in the app (the weekly run adds it as a wg- row)
   NOT ON ORGANIZER SITE  a sheet event the organizer's own site does not list (renamed, moved, cancelled or not posted)
+  OLD COPY             an organizer row the app still has from an earlier scrape that gave it another id (venue learned
+                       later); points at the current row so the app hides it
+  GONE FROM ORGANIZER SITE  an upcoming organizer row whose event the organizer's site no longer lists; the app hides it
 Tags add detail (VENUE DIFFERS, ALSO ON TOURNEY MACHINE, ...) and data_flags lists problems found in the scraped row."""
 import sys, os, csv, json, re, argparse, pathlib, datetime as dt
 from collections import defaultdict
@@ -34,6 +37,8 @@ from core.dedupe import canon_org, normalize_venue, venue_match, is_compound_ven
 from core.model import FULL_STATE
 from collectors.event_match import score, core_tokens, CONFIRM_SCORE, ORG_WORDS
 from collectors.organizers.match import to_event
+from adapters.misc_sites import addr_key
+from collectors.backfill_tourneymachine import schedule_score
 
 HOME = pathlib.Path(os.path.expanduser("~/WoodGoodsAI"))
 KIND_LABEL = {"placeholder": "placeholder (guessed from last year on Tourney Machine)", "tm": "Tourney Machine listing",
@@ -87,11 +92,15 @@ def match_name(name):
 
 
 def load_app(export_dir, today):
-    """Upcoming lacrosse rows the app shows, by kind. Rows the app already marked duplicate are left out."""
+    """Upcoming lacrosse rows the app shows, by kind. Rows the app marked duplicate are left out, except those hidden in
+    favour of an organizer row (a placeholder our own badge record replaced): they still hold the match and its history
+    links, and leaving them out would turn every confirmed event back into 'New' on the next run."""
+    allr = [json.loads(line) for line in open(export_dir / "event_candidates.jsonl")]
+    src = {r.get("id"): str(r.get("source") or "") for r in allr}
     rows = []
-    for line in open(export_dir / "event_candidates.jsonl"):
-        r = json.loads(line)
-        if not (r.get("sport") or "").lower().startswith("lacrosse") or r.get("status") == "duplicate": continue
+    for r in allr:
+        ours = r.get("status") == "duplicate" and src.get(r.get("duplicate_of"), "").startswith(("wg-", "org-"))
+        if not (r.get("sport") or "").lower().startswith("lacrosse") or (r.get("status") == "duplicate" and not ours): continue
         # the organizer-site rows themselves (wg- scrapers, org- crawler) are what is being checked, not something to
         # check them against: since the 2026-10-26 run they are in the app too
         if str(r.get("source") or "").startswith(("wg-", "org-")): continue
@@ -178,17 +187,112 @@ def series_key(r):
     return r["_kind"], canon_org(r.get("organizer_name")), " ".join(sorted(core_tokens(n))), week
 
 
-def history_starts(dirs, ids):
-    """history id -> start date of last year's event, from event_history.jsonl in the first export that has it."""
+def newest_export():
+    """The most recent local copy of the app's data that has what the report reads: backup/db/current (tools/backup_db.py)
+    or backup/db/fresh (a partial pull), whichever was written last."""
+    have = [p for p in (HOME / "backup/db/current", HOME / "backup/db/fresh")
+            if all((p / f).exists() for f in ("event_candidates.jsonl", "event_history.jsonl", "venues.jsonl"))]
+    return max(have, key=lambda p: (p / "event_candidates.jsonl").stat().st_mtime)
+
+
+HISTORY_KEEP = ("id", "name", "start_date", "end_date", "team_count", "venues", "listing_url")
+
+
+def history_rows(dirs, ids):
+    """history id -> last year's Tourney Machine record (dates, teams, venues[], link), from event_history.jsonl in the
+    first export that has it."""
     out = {}
     for d in dirs:
         p = d / "event_history.jsonl"
         if not p.exists(): continue
         for line in open(p):
             r = json.loads(line)
-            if r.get("id") in ids: out[r["id"]] = _date(r.get("start_date"))
+            if r.get("id") in ids: out[r["id"]] = {k: r.get(k) for k in HISTORY_KEEP}
         break
     return out
+
+
+def _acronym(name):
+    """'Orange County Great Park' -> 'OCGP', 'OC Great Park' -> 'OCGP', 'University of RI' -> 'URI'."""
+    words = [w for w in re.findall(r"[A-Za-z]+", name or "") if w.lower() not in ("of", "the", "and", "at")]
+    return "".join(w.upper() if w.isupper() and len(w) <= 3 else w[0].upper() for w in words)
+
+
+def same_venue_loose(a, b):
+    """Venue names Tourney Machine shortens: 'HBSC' = 'Huntington Beach Sports Complex', 'WCU' = 'West Chester University',
+    'Hoover Met Complex' = 'Hoover Metropolitan Complex'. Only used inside one matched event, where the town agrees."""
+    if not (a and b): return False
+    for x, y in ((a.strip(), b), (b.strip(), a)):            # before _real_venue, which reads 'HBSC' as two states
+        if re.fullmatch(r"[A-Z]{3,5}", x) and _real_venue(y) and _acronym(y) == x: return True
+    if not (_real_venue(a) and _real_venue(b)): return False
+    wa, wb = normalize_venue(a).split(), normalize_venue(b).split()
+    return len(wa) == len(wb) >= 2 and all(p == q or (min(len(p), len(q)) >= 3 and (p.startswith(q) or q.startswith(p)))
+                                           for p, q in zip(wa, wb))
+
+
+def venue_here(v, r):
+    """Is venue v of a Tourney Machine record this organizer site? The same venue name, or the same street address."""
+    if same_venue(v.get("venue_name"), r.get("venue_name")) or same_venue_loose(v.get("venue_name"), r.get("venue_name")): return True
+    a, b = addr_key(v.get("address")), addr_key((r.get("raw") or {}).get("address") or r.get("_address"))
+    return bool(a and b and a[0].isdigit() and a == b)
+
+
+def last_year_records(hrows):
+    """The records of last year's edition: the newest weekend among the linked history (older years left out)."""
+    dated = [(h, _date(h.get("start_date"))) for h in hrows if _date(h.get("start_date"))]
+    if not dated: return []
+    latest = max(s for _, s in dated)
+    return sorted((h for h, s in dated if (latest - s).days <= 3), key=lambda h: str(h.get("start_date")))
+
+
+def venue_schedule_quality(days):
+    """The same 0-100 schedule score every Tourney Machine event gets (collectors.backfill_tourneymachine), on this venue's
+    days only: Bucks Mill Park's lone Saturday, Mercer County Park's Saturday + Sunday. None when the days lack the numbers."""
+    try:
+        return (schedule_score(days) or {}).get("schedule_quality")
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def last_year_at(r, hrows):
+    """Last year's numbers at this organizer site's venue, added up over last year's records of the event: Trilogy ran
+    Veterans Day Classic 2025 as a Saturday and a Sunday tournament, both at Mercer County Park (64 + 70 teams, different
+    age groups). None when last year's edition didn't use this venue."""
+    hits = [(h, v) for h in last_year_records(hrows) for v in (h.get("venues") or []) if isinstance(v, dict) and venue_here(v, r)]
+    if not hits: return None
+    # 'Mercer County Park - Field 14 (Turf)' on Saturday is 'Mercer County Park - Field 14' on Sunday
+    fields = sorted({re.sub(r"\s*\([^)]*\)", "", f).strip() for _, v in hits for f in (v.get("fields") or []) if isinstance(f, str)})
+    total = lambda k: sum(int(v.get(k) or 0) for _, v in hits) or None
+    days = sorted((d for _, v in hits for d in (v.get("schedule") or []) if isinstance(d, dict)), key=lambda d: str(d.get("date")))
+    return {"year": _date(hits[0][0]["start_date"]).year, "venue_name": hits[0][1].get("venue_name"),
+            "address": hits[0][1].get("address"), "teams": total("teams"), "games": total("games"),
+            "field_count": len(fields) or max(int(v.get("field_count") or 0) for _, v in hits) or None, "fields": fields,
+            "schedule": days, "schedule_quality": venue_schedule_quality(days),
+            "from": [{"history_id": h["id"], "name": h.get("name"), "start_date": str(h.get("start_date")),
+                      "teams_here": v.get("teams"), "event_teams": h.get("team_count"), "url": h.get("listing_url")} for h, v in hits]}
+
+
+def venue_status(r, ly, recs):
+    """Why a site has (or lacks) last year's venue numbers. 'new venue' only when both sides name their venues: an
+    organizer giving no venue, or last year's records without a venue list, prove nothing."""
+    if ly: return "same venue as last year"
+    if not recs: return ""
+    if not (_real_venue(r.get("venue_name")) or (r.get("raw") or {}).get("address")): return "organizer gives no venue"
+    if not any(isinstance(v, dict) and v.get("venue_name") for h in recs for v in (h.get("venues") or [])):
+        return "last year's venues unknown"
+    town = _town_key(_city_state(r)[0])
+    towns = {_town_key(a.split(",")[-2]) for h in recs for v in (h.get("venues") or []) if isinstance(v, dict)
+             for a in [v.get("address") or ""] if a.count(",") >= 2}
+    if town and town in towns: return "same town as last year, venue name differs"     # 'Bryant University' / 'CONATY INDOOR ATHLETIC CENTER'
+    return "new venue this year"
+
+
+def last_year_text(ly):
+    """'2025: 134 teams, 16 fields (Nov 8 64, Nov 9 70)' for the CSV."""
+    if not ly: return ""
+    days = ", ".join(f"{_date(x['start_date']):%b %-d} {x['teams_here']}" for x in ly["from"]) if len(ly["from"]) > 1 else ""
+    return (f"{ly['year']}: {ly['teams'] or '?'} teams, {ly['field_count'] or '?'} fields at {ly['venue_name']}"
+            + (f" ({days})" if days else ""))
 
 
 def needs_check(flags, status):
@@ -372,16 +476,141 @@ def badge(status, r, a, res, off, pc):
     return "🔵 New · organizer website", "On the organizer's website, not in the app yet (the weekly run adds it)"
 
 
+SITE_NOTE = re.compile(r"\s+[-–—]\s+site\s+\d+$", re.I)
+
+
+def leftover_rows(export_dir, scr, today):
+    """Organizer rows the app still shows that this scrape no longer produces: a row's id is its event + date + venue
+    (else town), so when a scraper learns the venue ('Fall Classic (Boys) – Site 2' at NEBC, first sent as just
+    Northborough) the app gets a new row and keeps the old one. Only upcoming rows of organizers this scrape reached.
+    Returns [(old row, its current row)] where the current row is the same event on the same date, in the same town when
+    that picks one site, else the event's first site; current row None when the organizer's site no longer lists the
+    event. An old row is only paired with a current row the app already has, so nothing points at a missing row."""
+    keys = {f"{r['source']}:{r['source_event_id']}" for r in scr}
+    sources = {r["source"] for r in scr}
+    base = lambda n: SITE_NOTE.sub("", n or "").strip().lower()
+    app = [json.loads(l) for l in open(export_dir / "event_candidates.jsonl")]
+    in_app = {a.get("dedupe_key") for a in app}
+    by = defaultdict(list)
+    for r in scr:
+        if f"{r['source']}:{r['source_event_id']}" in in_app:
+            by[(r["source"], base(r["name"]), _date(r["start_date"]))].append(r)
+    out = []
+    for a in app:
+        if a.get("source") not in sources or a.get("status") == "duplicate" or a.get("dedupe_key") in keys: continue
+        s0, e0 = _date(a.get("start_date")), _date(a.get("end_date"))
+        if not s0 or (e0 or s0) < today: continue
+        sibs = sorted(by.get((a["source"], base(a.get("name")), s0), []), key=lambda r: r["name"])
+        if not sibs and any(base(r["name"]) == base(a.get("name")) and _date(r["start_date"]) == s0 for r in scr):
+            continue                                   # its current row isn't in the app yet: wait for it
+        town = [r for r in sibs if _town_key(r.get("city")) and _town_key(r.get("city")) == _town_key(a.get("city"))]
+        out.append((a, (town if len(town) == 1 else sibs or [None])[0]))
+    return out
+
+
+def leftover_records(pairs, now):
+    """Report lines and badge records for leftover organizer rows: an old copy points at its current row (replaced_by,
+    hidden like a replaced placeholder); one whose event is gone from the organizer's site is retired."""
+    lines, recs = [], []
+    for a, r in pairs:
+        key = f"{r['source']}:{r['source_event_id']}" if r else None
+        if r:
+            status, bdg = "OLD COPY", "⚪ Old copy · replaced by the current organizer row"
+            means = f"An earlier version of {r['name']} ({place(r)}) from the organizer's website; hidden in favour of {key}."
+        else:
+            status, bdg = "GONE FROM ORGANIZER SITE", "⚪ No longer on organizer website"
+            means = "Came from the organizer's website, which no longer lists it (renamed, moved or cancelled); hidden."
+        lines.append({"status": status, "badge": bdg, "badge_description": means, "details": means,
+                      "organizer": a.get("organizer_name"), "event": a.get("name"), "start": a.get("start_date"),
+                      "end": a.get("end_date"), "place": place(a), "organizer_url": a.get("listing_url"),
+                      "app_dedupe_key": a.get("dedupe_key")})
+        rec = {"app_dedupe_key": a["dedupe_key"], "status": "superseded" if r else "not_on_organizer_site", "badge": bdg,
+               "badge_description": means, "details": means, "tags": [], "checked_at": now,
+               "organizer": a.get("organizer_name"), "organizer_event_name": a.get("name"),
+               "organizer_start": a.get("start_date"), "organizer_end": a.get("end_date"), "organizer_url": a.get("listing_url")}
+        rec.update({"replaced_by": key} if r else {"retire": True})
+        recs.append(rec)
+    return lines, recs
+
+
+def placed(r):
+    """Does an organizer row name a real place: a venue (not 'Multiple Locations', 'DE and PA', TBD) or a town?"""
+    v = r.get("venue_name") or ""
+    return bool((_real_venue(v) and not re.search(r"multiple locations", v, re.I)) or _city_state(r)[0])
+
+
+FIRM = ("CONFIRMED", "DATE CONFIRMED", "PLACE DIFFERS", "DATE MOVED", "DATE CONFLICT")
+
+
+def event_links(scr, app, sgroups, linked, hrows):
+    """For each organizer event matched for sure (never a REVIEW): what its site rows should take over from the app's
+    copies. Every site of the event gets
+      history_ids          last year's Tourney Machine records the matched placeholders were copied from (verified: the
+                           organizer lists the event the same way), to link as confirmed precedent
+      earlier_history_ids  older years the app itself had linked to those rows (its own guess, keep the tier it had)
+      replaces             the placeholders and App data(manual-lacrosse-sheet) rows the site rows stand in for (to mark
+                           duplicate once their data is copied): a sheet row points at the site in its own town
+      same_event_keys      Tourney Machine listings of the same event (left as they are)
+      last_year_venue      last year's numbers at this site's venue (None: see last_year_venue_status)
+      last_year_venue_status  same venue as last year / same town as last year, venue name differs /
+                           new venue this year / organizer gives no venue / last year's venues unknown
+      last_year_event      last year's whole edition: its records, total teams, venues not listed this year
+      primary_site         the site the replaced placeholders point to (most teams there last year, else the first)
+    Returns ({site index: fields}, {replaced row key: organizer site key})."""
+    site_extra, replaced_by = {}, {}
+    for sites in sgroups.values():
+        firm = [(j, st) for i in sites for j, st in linked.get(i, []) if st in FIRM]
+        if not firm: continue
+        ph = sorted({j for j, _ in firm if app[j]["_kind"] == "placeholder"})
+        # a sheet row is replaced only by a site that says at least as much about the place, and never when the sheet's
+        # date disagrees ('Spring Break Training Florida (multi-week)'): 'Fall Invitational – Site 1/2/3' in New Castle,
+        # Georgetown and PA stay rather than give way to one organizer row that only says 'DE and PA'
+        kinds = defaultdict(set)
+        for j, st in firm: kinds[j].add(st)
+        sheet = sorted(j for j in kinds if app[j]["_kind"] == "sheet" and "DATE CONFLICT" not in kinds[j]
+                       and all(placed(scr[i]) for i in sites))
+        others = sorted({j for j, _ in firm if app[j]["_kind"] not in ("placeholder", "sheet")})
+        last = [h for h in dict.fromkeys((app[j].get("raw") or {}).get("history_id") for j in ph) if h in hrows]
+        earlier = [h for h in dict.fromkeys(h for j in ph + sheet + others for h in (app[j].get("history_ids") or []))
+                   if h in hrows and h not in last]
+        recs = last_year_records([hrows[h] for h in last])
+        here = {i: last_year_at(scr[i], recs) for i in sites}
+        unused = [v.get("venue_name") for h in recs for v in (h.get("venues") or []) if isinstance(v, dict)
+                  and not any(venue_here(v, scr[i]) for i in sites)]
+        event = {"year": _date(recs[0]["start_date"]).year, "teams": sum(int(h.get("team_count") or 0) for h in recs) or None,
+                 "records": [{"history_id": h["id"], "name": h.get("name"), "start_date": str(h.get("start_date")),
+                              "teams": h.get("team_count"), "url": h.get("listing_url")} for h in recs],
+                 "venues_not_listed_this_year": list(dict.fromkeys(unused))} if recs else None
+        primary = max(sites, key=lambda i: ((here[i] or {}).get("teams") or 0, -sites.index(i)))
+        key = lambda i: f"{scr[i]['source']}:{scr[i]['source_event_id']}"
+        for j in ph: replaced_by[app[j]["dedupe_key"]] = key(primary)
+        # the sheet lists sites one per row ('Fall Classic (Boys) – Site 1' in Northborough): the site in that town, else
+        # (no town, 'NJ (venue TBC)', or another town) the primary site, like the placeholders
+        for j in sheet:
+            town = _town_key(_city_state(app[j])[0])
+            same = [i for i in sites if town and _town_key(_city_state(scr[i])[0]) == town]
+            replaced_by[app[j]["dedupe_key"]] = key(same[0] if len(same) == 1 else primary)
+        for i in sites:
+            site_extra[i] = {"history_ids": last, "earlier_history_ids": earlier,
+                             "replaces": [app[j]["dedupe_key"] for j in ph + sheet],
+                             "same_event_keys": [app[j]["dedupe_key"] for j in others],
+                             "last_year_venue": here[i], "last_year_venue_status": venue_status(scr[i], here[i], recs),
+                             "last_year_event": event, "primary_site": i == primary}
+    return site_extra, replaced_by
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--export-dir", type=pathlib.Path)
     ap.add_argument("--scraped", type=pathlib.Path, help="jsonl of woodgoods_lacrosse rows from an earlier run")
     ap.add_argument("--out", type=pathlib.Path)
     ap.add_argument("--send-one", metavar="DEDUPE_KEY", help="send the badge record(s) for one app event to the app (a test)")
+    ap.add_argument("--send-event", metavar="NAME", help="send every badge record of one organizer event (all its sites and the "
+                    "app rows they replace), e.g. 'Veterans Day Classic' (a test)")
     ap.add_argument("--send", action="store_true", help="send every badge record to the app")
     args = ap.parse_args(argv)
     today = dt.date.today()
-    export = args.export_dir or next(p for p in (HOME / "backup/db/fresh", HOME / "backup/db/current") if (p / "event_candidates.jsonl").exists())
+    export = args.export_dir or newest_export()
     out = args.out or HOME / "reports" / f"lacrosse_match_{today}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -404,8 +633,10 @@ def main(argv=None):
                                                (venues.last_address, "app venue list") if vid and venues.last_address else ("", ""))
     for r in app:                                       # placeholders carry no organizer; their names often do
         if not r.get("organizer_name") and org_from_name(r.get("name")): r["organizer_name"] = org_from_name(r["name"])
-    hist = history_starts([export, HOME / "backup/db/current"],
-                          {(r.get("raw") or {}).get("history_id") for r in app if r["_kind"] == "placeholder"} - {None})
+    hids = {(r.get("raw") or {}).get("history_id") for r in app if r["_kind"] == "placeholder"}
+    hids |= {h for r in app for h in (r.get("history_ids") or []) if isinstance(h, str)}
+    hrows = history_rows([export, HOME / "backup/db/current"], hids - {None})
+    hist = {k: _date(h.get("start_date")) for k, h in hrows.items()}
     for r in app:
         h, s0 = hist.get((r.get("raw") or {}).get("history_id")), _date(r.get("start_date"))
         if r["_kind"] == "placeholder" and h and s0 and (s0 - h).days == 371:
@@ -474,9 +705,10 @@ def main(argv=None):
 
     cols = ["status", "badge", "badge_description", "tags", "details", "organizer", "event", "start", "end", "place", "address",
             "address_source", "organizer_url", "app_match", "app_event", "app_start", "app_end", "app_place", "app_address", "app_guessed_from",
-            "days_off", "match_score",
+            "last_year_here", "replaces", "days_off", "match_score",
             "evidence", "also_in_app", "data_flags", "app_dedupe_key", "app_listing_url"]
     lines, counts, checks = [], defaultdict(int), []
+    linked, line_at = defaultdict(list), {}            # organizer site -> [(app row, status)]; -> its report line
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     for i, r in enumerate(scr):
         m = matches.get(i, {})
@@ -495,6 +727,7 @@ def main(argv=None):
             off = (r["start_date"] - A[j].start).days
             pc = place_check(app[j], r, res)
             status, means, extra = status_for(primary, app[j], r, res, off, pc)
+            linked[i].append((j, status))
             tags += extra
             if status not in ("PLACE DIFFERS", "DATE CONFIRMED"):     # those statuses already say it
                 if pc is not True and pc is not None: tags.append(f"VENUE DIFFERS ({pc})")
@@ -521,6 +754,7 @@ def main(argv=None):
                       "match_score": res["score"] if res else "", "evidence": "; ".join(res["reasons"]) if res else "",
                       "also_in_app": "; ".join(f"{KIND_LABEL.get(k, k)}: {app[jj]['name']} ({app[jj]['start_date']})" for k, jj in others),
                       "data_flags": "; ".join(flags), "app_dedupe_key": a.get("dedupe_key", ""), "app_listing_url": a.get("listing_url", "")})
+        line_at[i] = len(lines) - 1
         checks += check_records(status, bdg, bdesc, means, tags, r, a, res, A[j].start if j is not None else None, now)
         # the other halves of the same event ('Veterans Day Classic: SUNDAY ...' next to '...: SATURDAY ...') get their
         # own badge, unless they sit at a different place (another site of the event, matched by its own organizer row)
@@ -531,8 +765,15 @@ def main(argv=None):
                     continue
                 offj = (r["start_date"] - A[jj].start).days
                 stj, meansj, extraj = status_for(primary, app[jj], r, rr, offj, pcj)
+                linked[i].append((jj, stj))
                 bj, dj = badge(stj, r, app[jj], rr, offj, pcj)
                 checks += check_records(stj, bj, dj, meansj, extraj, r, app[jj], rr, A[jj].start, now, with_org=False)
+
+    site_extra, replaced_by = event_links(scr, app, sgroups, linked, hrows)
+    by_org_key = {f"{scr[i]['source']}:{scr[i]['source_event_id']}": x for i, x in site_extra.items()}
+    for i, x in site_extra.items():
+        lines[line_at[i]].update(last_year_here=last_year_text(x["last_year_venue"]) or x["last_year_venue_status"],
+                                 replaces="; ".join(x["replaces"]))
 
     # sheet events of organizers we scrape that their own site does not list
     scraped_orgs = {canon_org(r.get("organizer_name")) for r in scr}
@@ -551,8 +792,13 @@ def main(argv=None):
                       "app_listing_url": r.get("listing_url")})
         checks += check_records("NOT ON ORGANIZER SITE", bdg, bdesc, lines[-1]["details"], [], None, r, None, None, now)
 
+    # organizer rows the app still has from earlier runs of a scraper that has since changed their id
+    old_lines, old_recs = leftover_records(leftover_rows(export, scr, today), now)
+    lines += old_lines; checks += old_recs
+    for x in old_lines: counts[x["status"]] += 1
+
     order = ["CONFIRMED", "DATE CONFIRMED", "PLACE DIFFERS", "DATE MOVED", "DATE CONFLICT", "REVIEW", "NOT ON ORGANIZER SITE",
-             "NEW SITE", "NEW"]
+             "NEW SITE", "NEW", "OLD COPY", "GONE FROM ORGANIZER SITE"]
     lines.sort(key=lambda x: (order.index(x["status"]), str(x.get("organizer") or ""), str(x.get("start") or x.get("app_start"))))
     with open(out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols); w.writeheader(); w.writerows(lines)
@@ -563,16 +809,25 @@ def main(argv=None):
 
     # the app's badges: one current check per app row; dry run always written, sending only when asked
     checks = best_per_event(checks)
+    for c in checks:
+        k = c["app_dedupe_key"]
+        if k in replaced_by: c["replaced_by"] = replaced_by[k]
+        if k in by_org_key: c.update(by_org_key[k])
     in_app = {json.loads(l).get("dedupe_key") for l in open(export / "event_candidates.jsonl")}
     ready = [c for c in checks if c["app_dedupe_key"] in in_app]
     held = len(checks) - len(ready)
     path = out.with_suffix(".checks.json")
     path.write_text(json.dumps(ready, indent=1, default=str))
     print(f"badge records: {len(ready)} ready ({held} held back: their organizer row isn't in the app yet) -> {path}")
-    if args.send_one or args.send:
-        batch = [c for c in ready if c["app_dedupe_key"] == args.send_one or c.get("matched_dedupe_key") == args.send_one] if args.send_one else ready
+    if args.send_one or args.send_event or args.send:
+        if args.send_one:
+            batch = [c for c in ready if c["app_dedupe_key"] == args.send_one or c.get("matched_dedupe_key") == args.send_one]
+        elif args.send_event:
+            batch = [c for c in ready if match_name(c.get("organizer_event_name") or "").lower() == args.send_event.strip().lower()]
+        else:
+            batch = ready
         if not batch:
-            sys.exit(f"no badge record for {args.send_one}")
+            sys.exit(f"no badge record for {args.send_one or args.send_event}")
         send_checks(batch)
     return out
 
@@ -580,7 +835,8 @@ def main(argv=None):
 STATUS_CODE = {"CONFIRMED": "confirmed", "DATE CONFIRMED": "date_confirmed", "PLACE DIFFERS": "place_differs",
                "DATE MOVED": "date_moved", "DATE CONFLICT": "date_conflict", "REVIEW": "review",
                "NOT ON ORGANIZER SITE": "not_on_organizer_site", "NEW": "new", "NEW SITE": "new"}
-STATUS_RANK = ["confirmed", "date_confirmed", "place_differs", "date_moved", "date_conflict", "review", "new", "not_on_organizer_site"]
+STATUS_RANK = ["confirmed", "date_confirmed", "place_differs", "date_moved", "date_conflict", "review", "new", "not_on_organizer_site",
+               "superseded"]
 
 
 def check_records(status, bdg, bdesc, details, tags, r, a, res, app_start, now, with_org=True):
@@ -645,8 +901,10 @@ def ingest_settings():
     return env.get("INGEST_URL", "https://opswg.lovable.app/api/public/ingest"), env["INGEST_KEY"]
 
 
-def send_checks(batch, size=50):
-    """POST {"source": "organizer-check", "confirmations": [...]} in batches; print what the app says it saved."""
+def send_checks(batch, size=10):
+    """POST {"source": "organizer-check", "confirmations": [...]} in batches; print what the app says it saved. The app
+    takes ~4 s per new record (links, copies, hiding; the slow recomputes are queued for its background job), so 10 per
+    request stays well inside the request timeout."""
     import urllib.request, urllib.error, ssl
     url, key = ingest_settings()
     try:                                             # this Mac's Python has no system certificates; certifi's bundle works
@@ -654,19 +912,25 @@ def send_checks(batch, size=50):
         ctx = ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         ctx = ssl.create_default_context()
-    saved = 0
+    saved, applied, failed, queued = 0, 0, [], 0
     for i in range(0, len(batch), size):
         body = json.dumps({"source": "organizer-check", "confirmations": batch[i:i + size]}, default=str).encode()
         req = urllib.request.Request(url, data=body, method="POST",
                                      headers={"x-ingest-key": key, "Content-Type": "application/json", "user-agent": "woodgoods-collectors"})
         try:
-            with urllib.request.urlopen(req, timeout=120, context=ctx) as resp:
+            with urllib.request.urlopen(req, timeout=300, context=ctx) as resp:
                 reply = json.loads(resp.read() or b"{}")
         except urllib.error.HTTPError as e:
             sys.exit(f"app refused the badge records: HTTP {e.code} {e.read()[:300]!r}")
         saved += int(reply.get("saved") or 0)
-        print(f"  sent {len(batch[i:i + size])}: {reply}")
-    print(f"badge records saved: {saved} of {len(batch)}")
+        applied += int(reply.get("applied") or 0)
+        failed += [str(e) for e in reply.get("errors") or []]
+        queued += len(reply.get("queued") or [])
+        print(f"  sent {len(batch[i:i + size])}: saved {reply.get('saved')}, applied {reply.get('applied')}, "
+              f"queued {len(reply.get('queued') or [])}, errors {len(reply.get('errors') or [])}")
+    # 'saved' = the badge is stored; 'applied' = the app also linked history / copied data / hid placeholders for it
+    print(f"badge records saved: {saved} of {len(batch)}; applied: {applied}; queued for the app's background job: {queued}")
+    for e in failed: print(f"  NOT APPLIED {e}")
 
 
 if __name__ == "__main__":

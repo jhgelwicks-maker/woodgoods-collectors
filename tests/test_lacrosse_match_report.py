@@ -11,6 +11,7 @@ import lacrosse_match_report as L  # noqa: E402
 
 TODAY = dt.date.today()
 D = lambda days: (TODAY + dt.timedelta(days=days)).isoformat()
+SAT = 35 + (5 - TODAY.weekday()) % 7          # days to a Saturday 5-6 weeks out, so 'Saturday'/'Sunday' rows share a weekend
 
 
 def _write(path, rows):
@@ -197,12 +198,12 @@ def test_best_status_wins_and_sending_posts_batches(monkeypatch):
 
 
 def test_organizer_row_is_green_and_both_halves_of_an_event_get_the_badge(tmp_path):
-    hist = (TODAY + dt.timedelta(days=40 - 364)).isoformat()
-    sat = ph("Veterans Day Classic: SATURDAY 2031-2035/6", D(33), "West Windsor", "NJ", "hs")
-    sun = ph("Veterans Day Classic: SUNDAY 2027-2030", D(34), "West Windsor", "NJ", "hu")
-    own = {**org("Veterans Day Classic", D(40), "West Windsor", "NJ", organizer="Trilogy"), "source": "wg-trilogy",
+    hist = (TODAY + dt.timedelta(days=SAT - 364)).isoformat()
+    sat = ph("Veterans Day Classic: SATURDAY 2031-2035/6", D(SAT - 7), "West Windsor", "NJ", "hs")
+    sun = ph("Veterans Day Classic: SUNDAY 2027-2030", D(SAT - 6), "West Windsor", "NJ", "hu")
+    own = {**org("Veterans Day Classic", D(SAT), "West Windsor", "NJ", organizer="Trilogy"), "source": "wg-trilogy",
            "status": "new", "dedupe_key": "wg-trilogy:vdc"}
-    scraped = [{**org("Veterans Day Classic", D(40), "West Windsor", "NJ", organizer="Trilogy"), "source": "wg-trilogy",
+    scraped = [{**org("Veterans Day Classic", D(SAT), "West Windsor", "NJ", organizer="Trilogy"), "source": "wg-trilogy",
                 "source_event_id": "vdc"}]
     _run(tmp_path, [sat, sun, own], scraped, history=[{"id": "hs", "start_date": hist}, {"id": "hu", "start_date": hist}])
     recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
@@ -210,3 +211,159 @@ def test_organizer_row_is_green_and_both_halves_of_an_event_get_the_badge(tmp_pa
     assert recs["recurrence:hs"]["badge"].startswith("🔴 Date corrected · app guessed")
     assert recs["wg-trilogy:vdc"]["status"] == "confirmed" and recs["wg-trilogy:vdc"]["badge"] == "🟢 Confirmed · organizer website"
     assert "corrects the app's date" in recs["wg-trilogy:vdc"]["badge_description"]
+
+
+def _hist(hid, name, days_ago, teams, venues):
+    start = (TODAY - dt.timedelta(days=days_ago)).isoformat()
+    return {"id": hid, "name": name, "start_date": start, "end_date": start, "team_count": teams,
+            "listing_url": f"https://tm.test/{hid}", "venues": venues}
+
+
+def _tmv(name, address, teams, fields, day, end="17:30"):
+    return {"venue_name": name, "address": address, "teams": teams, "games": teams * 2, "fields": fields,
+            "field_count": len(fields), "schedule": [{"date": day, "games": teams * 2, "hours": 9.5, "fields_active": len(fields),
+                                                      "fields_active_pm": len(fields), "fields_active_late": len(fields), "est_end": end}]}
+
+
+def test_organizer_sites_take_over_last_years_records_per_venue(tmp_path):
+    # Veterans Day Classic 2025 was two Tourney Machine tournaments (Saturday, Sunday) sharing Mercer County Park; this year
+    # the organizer lists three sites, one of them new and without Iron Peak
+    sat_day, sun_day = (TODAY - dt.timedelta(days=324)).isoformat(), (TODAY - dt.timedelta(days=323)).isoformat()
+    hs = _hist("hs", "Veterans Day Classic: SATURDAY 2031-2035/6", 324, 144, [
+        _tmv("Mercer County Park", "334 South Post Road, West Windsor Township, NJ 08550", 64, ["MCP - Field 1", "MCP - Field 14 (Turf)"], sat_day),
+        _tmv("Iron Peak Sports & Events", "137 Mountain View Rd, Hillsborough, NJ", 34, ["IP - Field 15"], sat_day),
+        _tmv("Bucks Mill Park", "137 Bucks Mill Rd, Colts Neck, NJ 07722", 36, ["BM - Field 1"], sat_day)])
+    hu = _hist("hu", "Veterans Day Classic: SUNDAY 2026-2030", 323, 106, [
+        _tmv("Mercer County Park", "334 South Post Road, West Windsor Township, NJ 08550", 70, ["MCP - Field 1", "MCP - Field 14"], sun_day),
+        _tmv("Iron Peak Sports & Events", "137 Mountain View Rd, Hillsborough, NJ", 36, ["IP - Field 15"], sun_day)])
+    older = _hist("h24", "Veterans Day Classic: SUNDAY", 688, 96, [])
+    sat = ph("Veterans Day Classic: SATURDAY 2031-2035/6", D(SAT), "West Windsor", "NJ", "hs")
+    sun = {**ph("Veterans Day Classic: SUNDAY 2026-2030", D(SAT + 1), "West Windsor", "NJ", "hu"), "history_ids": ["hu", "h24"]}
+    def site(n, venue, city, address=None):
+        r = {**org(f"Veterans Day Classic – Site {n}", D(SAT), city, "NJ", organizer="Trilogy", venue=venue),
+             "source": "wg-trilogy", "source_event_id": f"vdc-{n}"}
+        r["raw"]["address"] = address
+        return r
+    scraped = [site(1, "Mercer County Park & Community College", "West Windsor", "334 South Post Road West Windsor NJ 08550"),
+               site(2, "Bucks Mill Park", "Colts Neck"), site(3, "St. Joseph High School", "Metuchen")]
+    own = [{**r, "status": "new", "dedupe_key": f"wg-trilogy:{r['source_event_id']}"} for r in scraped]
+    rows = _run(tmp_path, [sat, sun] + own, scraped, history=[hs, hu, older])
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    s1, s2, s3 = (recs[f"wg-trilogy:vdc-{n}"] for n in (1, 2, 3))
+    for s in (s1, s2, s3):
+        assert sorted(s["replaces"]) == ["recurrence:hs", "recurrence:hu"]
+        assert sorted(s["history_ids"]) == ["hs", "hu"] and s["earlier_history_ids"] == ["h24"]
+        assert s["last_year_event"]["teams"] == 250 and s["last_year_event"]["venues_not_listed_this_year"] == ["Iron Peak Sports & Events"]
+    ly = s1["last_year_venue"]                       # both days added up; 'Field 14 (Turf)' and 'Field 14' are one field
+    assert (ly["teams"], ly["field_count"], [d["date"] for d in ly["schedule"]]) == (134, 2, [sat_day, sun_day])
+    assert [x["teams_here"] for x in ly["from"]] == [64, 70]
+    assert s2["last_year_venue"]["teams"] == 36 and len(s2["last_year_venue"]["from"]) == 1
+    assert ly["schedule_quality"] == 100 and s2["last_year_venue"]["schedule_quality"] == 100     # the event formula, per venue
+    assert L.venue_schedule_quality([{"date": "2025-11-08"}]) is None                            # old records without numbers
+    assert s3["last_year_venue"] is None and s3["last_year_venue_status"] == "new venue this year"
+    assert (s1["primary_site"], s2["primary_site"], s3["primary_site"]) == (True, False, False)
+    assert recs["recurrence:hs"]["replaced_by"] == recs["recurrence:hu"]["replaced_by"] == "wg-trilogy:vdc-1"
+    assert rows["Veterans Day Classic – Site 1"]["last_year_here"].startswith(f"{ly['year']}: 134 teams, 2 fields at Mercer County Park (")
+    assert rows["Veterans Day Classic – Site 3"]["last_year_here"] == "new venue this year"
+
+
+def test_short_tourney_machine_venue_names_and_honest_venue_status():
+    assert L.same_venue_loose("HBSC", "Huntingdon Beach Sports Complex") and L.same_venue_loose("OCGP", "OC Great Park")
+    assert L.same_venue_loose("URI", "University of Rhode Island") and L.same_venue_loose("Hoover Met Complex", "Hoover Metropolitan Complex")
+    assert not L.same_venue_loose("NJ", "New Jersey") and not L.same_venue_loose("Bucks Mill Park", "Blue Sky Park")
+    recs = [{"start_date": "2025-11-08", "venues": [{"venue_name": "UMass Amherst", "address": "131 Commonwealth Ave, Amherst, MA 01003"}]}]
+    assert L.venue_status({"city": "Amherst", "state": "MA", "raw": {}}, None, recs) == "organizer gives no venue"
+    assert L.venue_status({"city": "Amherst", "state": "MA", "venue_name": "Amherst Regional HS", "raw": {}}, None, recs) == \
+        "same town as last year, venue name differs"
+    assert L.venue_status({"city": "Amherst", "state": "MA", "venue_name": "X Park", "raw": {}}, None,
+                          [{"start_date": "2025-11-08", "venues": []}]) == "last year's venues unknown"
+
+
+def test_a_possible_match_never_replaces_anything():
+    scr = [{"source": "wg-x", "source_event_id": "a", "venue_name": "P", "raw": {}}]
+    app = [{"_kind": "placeholder", "dedupe_key": "recurrence:h", "raw": {"history_id": "h"}}]
+    assert L.event_links(scr, app, {"g": [0]}, {0: [(0, "REVIEW")]}, {"h": {"id": "h", "start_date": "2025-01-01"}}) == ({}, {})
+
+
+def test_send_event_sends_every_record_of_one_event(tmp_path, monkeypatch):
+    sent = []
+    monkeypatch.setattr(L, "send_checks", lambda batch: sent.extend(batch))
+    sat = ph("Veterans Day Classic: SATURDAY", D(40), "West Windsor", "NJ", "hs")
+    other = ph("Empire of the Sun", D(30), "Panama City Beach", "FL", "h2")
+    scraped = [{**org(f"Veterans Day Classic – Site {n}", D(40), "West Windsor", "NJ", organizer="Trilogy"),
+                "source": "wg-trilogy", "source_event_id": f"vdc-{n}"} for n in (1, 2)] + \
+              [{**org("Empire of The Sun", D(30), "Panama City Beach", "FL"), "source": "wg-victory", "source_event_id": "eots"}]
+    own = [{**r, "status": "new", "dedupe_key": f"{r['source']}:{r['source_event_id']}"} for r in scraped]
+    exp = tmp_path / "export"; exp.mkdir()
+    _write(exp / "event_candidates.jsonl", [sat, other] + own); _write(exp / "event_history.jsonl", []); _write(exp / "venues.jsonl", [])
+    _write(tmp_path / "s.jsonl", scraped)
+    L.main(["--export-dir", str(exp), "--scraped", str(tmp_path / "s.jsonl"), "--out", str(tmp_path / "r.csv"),
+            "--send-event", "veterans day classic"])
+    assert sorted(c["app_dedupe_key"] for c in sent) == ["recurrence:hs", "wg-trilogy:vdc-1", "wg-trilogy:vdc-2"]
+
+
+def test_old_copies_of_organizer_rows_point_at_their_current_row(tmp_path):
+    def pt(name, start, city, venue, sid, src="wg-primetime"):
+        return {**org(name, start, city, "MA", organizer="PrimeTime", venue=venue), "source": src, "source_event_id": sid}
+    scraped = [pt("Fall Classic (Boys) – Site 1", D(5), "Smithfield", "Bryant University", "fc-bryant"),
+               pt("Fall Classic (Boys) – Site 2", D(5), "Northborough", "NEBC", "fc-nebc"),
+               pt("Fall Classic (Boys) – Site 3", D(5), "Fitchburg", "Game On", "fc-gameon"),
+               pt("Summer Kickoff – Site 1", D(60), "Baltimore", "Calvert Hall", "sk-calvert")]
+    def in_app(r): return {**r, "status": "new", "dedupe_key": f"{r['source']}:{r['source_event_id']}"}
+    app = [in_app(r) for r in scraped[:3]] + [                       # Summer Kickoff's current row isn't in the app yet
+        in_app(pt("Fall Classic (Boys) – Site 1", D(5), "Northborough", None, "fc-northborough")),
+        in_app(pt("Fall Classic (Boys) – Site 3", D(5), "Smithfield", None, "fc-smithfield")),
+        in_app(pt("Fall Classic (Boys)", D(5), "Worcester", None, "fc-worcester")),             # town of no site: first site
+        in_app(pt("Summer Kickoff", D(60), "Baltimore", None, "sk-baltimore")),                # wait for its current row
+        in_app(pt("Road to the Challenge", D(30), "Dover", None, "road")),                      # gone from the site
+        in_app(pt("Spring Thaw", D(-30), "Dover", None, "thaw")),                               # past: left alone
+        in_app(pt("Other Org Event", D(30), "Dover", None, "x", src="wg-hogans"))]              # organizer not scraped
+    rows = _run(tmp_path, app, scraped)
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert recs["wg-primetime:fc-northborough"]["replaced_by"] == "wg-primetime:fc-nebc"
+    assert recs["wg-primetime:fc-smithfield"]["replaced_by"] == "wg-primetime:fc-bryant"
+    assert recs["wg-primetime:fc-worcester"]["replaced_by"] == "wg-primetime:fc-bryant"
+    assert recs["wg-primetime:fc-northborough"]["status"] == "superseded"
+    assert recs["wg-primetime:road"]["retire"] is True and recs["wg-primetime:road"]["status"] == "not_on_organizer_site"
+    for k in ("wg-primetime:sk-baltimore", "wg-primetime:thaw", "wg-hogans:x"):
+        assert k not in recs
+    assert rows["Road to the Challenge"]["status"] == "GONE FROM ORGANIZER SITE"
+
+
+def test_placeholders_we_hid_still_match_on_the_next_run(tmp_path):
+    own = {**org("Empire of The Sun", D(30), "Panama City Beach", "FL"), "source": "wg-victory", "source_event_id": "eots",
+           "status": "new", "dedupe_key": "wg-victory:eots", "id": "org-row"}
+    hidden = {**ph("Empire of the Sun 2025", D(30), "Panama City Beach", "FL", "h2"), "status": "duplicate", "duplicate_of": "org-row"}
+    other = {**ph("Victory Tide", D(60), "Little River", "SC", "h3"), "status": "duplicate", "duplicate_of": "some-tm-row"}
+    rows = _run(tmp_path, [own, hidden, other, {"id": "some-tm-row", "source": "tourneymachine", "sport": "lacrosse"}],
+                [{k: v for k, v in own.items() if k not in ("status", "dedupe_key", "id")},
+                 {**org("Victory Tide", D(60), "Little River", "SC"), "source": "wg-victory", "source_event_id": "tide"}])
+    assert rows["Empire of The Sun"]["status"] == "CONFIRMED"           # hidden by our record: still the match
+    assert rows["Victory Tide"]["status"] == "NEW"                      # hidden by the app for another reason: not used
+
+
+def test_sheet_rows_are_replaced_by_the_organizer_site_in_their_town(tmp_path):
+    def pt(n, city, venue, sid):
+        return {**org(f"Fall Classic (Boys) – Site {n}", D(SAT), city, "MA", organizer="PrimeTime", venue=venue),
+                "source": "wg-primetime", "source_event_id": sid}
+    scraped = [pt(1, "Smithfield", "Bryant University", "bryant"), pt(2, "Northborough", "NEBC", "nebc"), pt(3, "Fitchburg", "Game On", "gameon")]
+    for r in scraped: r["state"] = "RI" if r["city"] == "Smithfield" else "MA"; r["city_states"] = [f"{r['city']}, {r['state']}"]
+    def sheet(n, city):
+        return {"source": "manual-lacrosse-sheet", "sport": "lacrosse", "status": "new", "name": f"Fall Classic (Boys) – Site {n}",
+                "start_date": D(SAT), "end_date": D(SAT + 1), "organizer_name": "PrimeTime", "city": city, "state": "MA",
+                "city_states": [f"{city}, MA"], "dedupe_key": f"manual-lacrosse-sheet:fc-{n}"}
+    own = [{**r, "status": "new", "dedupe_key": f"wg-primetime:{r['source_event_id']}"} for r in scraped]
+    _run(tmp_path, [sheet(1, "Northborough"), sheet(2, "Fitchburg")] + own, scraped)
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert recs["manual-lacrosse-sheet:fc-1"]["replaced_by"] == "wg-primetime:nebc"
+    assert recs["manual-lacrosse-sheet:fc-2"]["replaced_by"] == "wg-primetime:gameon"
+    for k in ("bryant", "nebc", "gameon"):
+        assert sorted(recs[f"wg-primetime:{k}"]["replaces"]) == ["manual-lacrosse-sheet:fc-1", "manual-lacrosse-sheet:fc-2"]
+        assert recs[f"wg-primetime:{k}"]["same_event_keys"] == []
+
+
+def test_a_sheet_row_stays_when_the_organizer_says_less_about_the_place():
+    assert L.placed({"venue_name": "NEBC", "city": "Northborough", "state": "MA"})
+    assert L.placed({"venue_name": None, "city": "Kingston", "state": "RI"})
+    assert not L.placed({"venue_name": "DE and PA", "city": None, "state": "DE"})
+    assert not L.placed({"venue_name": "Multiple Locations", "city": None, "state": "CT"})

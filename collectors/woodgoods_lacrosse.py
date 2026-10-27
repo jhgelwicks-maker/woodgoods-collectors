@@ -15,6 +15,7 @@ into one row per booking instead of two rows side by side.
 import re, datetime, logging, dataclasses
 from . import common
 from .common import log
+from core.model import STATES as STATE_CODES
 
 FACILITY = re.compile(r"\b(park|parks|complex|fields?|center|centre|\w*plex|stadium|university|college|academy|school|hs|club|"
                       r"grounds|arena|farm|sports|athletic|athletics|recreation|turf|dome|campus|commons|kp|fieldhouse)\b", re.I)
@@ -87,16 +88,29 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 
 
+TOWN_AFTER_VENUE = re.compile(r"^(?P<venue>.+?),\s*(?P<town>[A-Z][A-Za-z.'\- ]{1,30})$")
+
+
+def venue_and_town(venue, city):
+    """'NetSports Complex, Cary' -> ('NetSports Complex', 'Cary') when the organizer gave no town of its own; a venue
+    alone stays a venue and the town stays empty (never the venue's name: the app reads the town to place the pin)."""
+    if city or not venue:
+        return venue, city
+    m = TOWN_AFTER_VENUE.match(venue.strip())
+    if m and not FACILITY.search(m["town"]) and len(m["town"].split()) <= 3 and m["town"].strip(".").upper() not in STATE_CODES:
+        return m["venue"].strip(), m["town"].strip()
+    return venue, None
+
+
 def to_common(ev, collector_slug):
     """Map one scraped Event onto the shared row schema."""
-    city_state = None
-    if ev.city and ev.state:
-        city_state = f"{ev.city}, {ev.state}"
-    elif ev.state:
-        city_state = f"{ev.venue or ''}, {ev.state}".strip(", ")
-
-    # name without '– Site N' + venue: a site keeps its id when the organizer reorders its locations
+    # name without '– Site N' + venue: a site keeps its id when the organizer reorders its locations (the venue as the
+    # organizer wrote it, so splitting off a town below doesn't change the id)
     ident = _slug(f"{SITE_SUFFIX.sub('', ev.name)}-{ev.start_date}-{ev.venue or ev.city or ''}")
+    venue, city = venue_and_town(ev.venue, ev.city)
+    # 'City, ST' only with a real town: MLT gives just a venue and a state, and 'Farmingdale State College, NY' here
+    # became the town 'Farmingdale State College' (normalize() reads the town from city_states)
+    city_state = f"{city}, {ev.state}" if city and ev.state else None
 
     return {
         "source": f"wg-{collector_slug}",
@@ -106,8 +120,8 @@ def to_common(ev, collector_slug):
         "organizer_name": ev.organizer,
         "start_date": ev.start_date,
         "end_date": ev.end_date,
-        "venue_name": ev.venue,
-        "city": ev.city,
+        "venue_name": venue,
+        "city": city,
         "state": ev.state,
         "city_states": [city_state] if city_state else [],
         # organizer sites publish counts for the SITE, not the whole event
@@ -116,6 +130,11 @@ def to_common(ev, collector_slug):
         "age_groups": ev.age_range,
         "listing_url": ev.source_url,
         "official_url": ev.source_url,
+        # the app's Locations panel lists venues[]; a site row is one venue. Last year's numbers at the venue come with the
+        # badge records (tools/lacrosse_match_report.py): this run has no history, and venues[] is replaced every week
+        "venues": [{"venue_name": venue, "address": ev.address, "city": city, "state": ev.state}] if venue else [],
+        # organizer pages give no field maps; and since 2026-10-26 the app rejects new rows with has_field_map empty
+        "has_field_map": False,
         "raw": {"gender": ev.gender, "event_type": ev.event_type,
                 "raw_date": ev.raw_date, "collector": collector_slug,
                 "college_coaches": ev.college_coaches, "date_note": ev.date_note,
