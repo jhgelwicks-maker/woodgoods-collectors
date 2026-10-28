@@ -353,6 +353,83 @@ class AllianceCollector(LeagueAppsCollector):
             out += self.collect_nlv(out)
         except Exception as e:  # noqa: BLE001
             self.errors.append(f"{self.slug} nlv: {e}")
+        self._places(out)
+        return out
+
+    def _places(self, events):
+        """Venues and state the event rows lack: the home page lists each event's venues ('2026 FALL INVITATIONAL ...
+        Kirkwood Sports, DE- 2028 & 2029 MSI, PA- 2030 Sandhill Fields, DE- 2031, ...'); an event page's 'Location :'
+        names them without a state ('Maryland Soccerplex 2030AA & A ... Troy Park & Blandair Park 2034 ...'), and the
+        partner site's listing of the same series in earlier years gives that state ('Summer Championships ... Boyds,
+        Maryland')."""
+        from core.model import FULL_STATE
+        try:
+            home = re.sub(r"\s+", " ", self.soup(f"{self.host}/page/home").get_text(" ", strip=True))
+        except Exception:  # noqa: BLE001
+            home = ""
+        series = {}
+        try:
+            for tr in self.soup(self.nlv_url).select("tr"):
+                tds = tr.find_all("td")
+                if len(tds) >= 4 and tds[1].find("b"):
+                    nm = re.sub(r"^20\d{2}\s+|\s*-?\s*\b(Saturday Only|Sunday Only|Both Days)$", "", self.txt(tds[1].find("b")).strip(), flags=re.I)
+                    where = self.txt(tds[3]).strip()
+                    st = re.findall(r"\b([A-Z]{2})\b", where) or [FULL_STATE[w.lower()] for w in re.findall(r"[A-Za-z]+(?: [A-Za-z]+)?", where) if w.lower() in FULL_STATE]
+                    if len(set(st)) == 1:
+                        series.setdefault(nm.lower().strip(" -"), st[0])        # newest year first on the page
+        except Exception:  # noqa: BLE001
+            pass
+        for ev in events:
+            sites, grads = self.home_sites(home, ev)
+            if sites:
+                ev.venue, ev.city, ev.state, ev.address = sites[0]
+                ev.sites = sites if len(sites) > 1 else []
+                if grads and not ev.age_range:
+                    ev.age_range = f"{min(grads)}–{max(grads)}"
+            if not ev.state:
+                ev.state = next((st for k, st in series.items() if k and k in ev.name.lower()), None)
+            if not ev.sites and ev.source_url and "EventID=" in ev.source_url:
+                try:
+                    page = re.sub(r"\s+", " ", self.soup(ev.source_url).get_text(" ", strip=True))
+                except Exception:  # noqa: BLE001
+                    page = ""
+                names = self.location_venues(page)
+                loc = re.search(r"Location\s*:\s*(.+?)\s*(?:Payment|Cost|Date)\s*:", page)
+                yrs = [int(y) for y in re.findall(r"\b(20[2-4]\d)(?=AA|A\b|\b)", loc.group(1))] if loc else []
+                if yrs and not ev.age_range:                        # '2030AA & A, ... 2036' in the venue list
+                    ev.age_range = f"{min(yrs)}–{max(yrs)}" if min(yrs) != max(yrs) else str(yrs[0])
+                if len(names) > 1:
+                    ev.sites = [(n, None, ev.state, None) for n in names]
+                    ev.venue = names[0]
+
+    @staticmethod
+    def home_sites(home, ev):
+        """([(venue, None, state, None)], [grad years]) for one event from the home page's event list."""
+        key = re.sub(r"^the league\s*-\s*", "", ev.name, flags=re.I).strip()
+        m = re.search(rf"\b{ev.start_date.year}\s+{re.escape(key)}\b(.{{0,700}})", home or "", re.I) if ev.start_date else None
+        if not m:
+            return [], []
+        block = re.split(r"\bAPPLY\b|\b20\d\d\s+(?:[A-Z]+\s+){1,4}(?:CHAMPIONSHIPS?|INVITATIONAL|CLASSIC)\b", m.group(1))[0]
+        sites, grads = [], []
+        for v, st, yrs in re.findall(r"([A-Z][\w&'. ]{1,40}?),\s*([A-Z]{2})\s*[-–]\s*((?:20\d\d[\s,&]*)+)", block):
+            if v.strip() not in [x[0] for x in sites]:
+                sites.append((v.strip(), None, st, None))
+            grads += [int(y) for y in re.findall(r"20\d\d", yrs)]
+        return sites, grads
+
+    @staticmethod
+    def location_venues(text):
+        """['Maryland Soccerplex', 'Troy Park', 'Blandair Park'] from 'Location : Friday-Sunday: Maryland Soccerplex
+        2030AA & A, 2031AA & A ... Troy Park & Blandair Park 2034 AA & A 2035 AA & A & 2036 Payment:'."""
+        m = re.search(r"Location\s*:\s*(.+?)\s*(?:Payment|Cost|Date)\s*:", text or "")
+        if not m:
+            return []
+        seg = re.sub(r"\b(?:Fri|Sat|Sun)[a-z]*(?:\s*-\s*(?:Fri|Sat|Sun)[a-z]*)?\s*:", " ", m.group(1))
+        out = []
+        for chunk in re.split(r"(?:\s*&?\s*20\d\d\s*(?:AA|A)?(?:\s*&\s*(?:AA|A)\b)?\s*,?)+", seg):
+            for v in re.split(r"\s+&\s+(?=[A-Z])", chunk.strip(" ,&")):
+                if re.search(r"[A-Za-z]{3}", v) and v.strip() not in out:
+                    out.append(v.strip())
         return out
 
     def collect_nlv(self, have):

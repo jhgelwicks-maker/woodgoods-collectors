@@ -462,3 +462,18 @@ def test_a_venue_is_never_sent_as_the_town():
     nebc = to_common(Event(organizer="PrimeTime", name="Fall Classic", start_date=dt.date(2026, 10, 31), venue="NEBC",
                            city="Northborough", state="MA"), "primetime")
     assert (nebc["venue_name"], nebc["city"]) == ("NEBC", "Northborough")
+
+
+def test_alliance_venues_and_state_from_home_page_and_location_list():
+    from adapters.leagueapps import AllianceCollector
+    from core.model import Event
+    home = ("The LEague Lacrosse EVENTs 2026 FALL INVITATIONAL NOVEMBER 21st-22nd, 2026 Saturday November 21 st , 2026 Kirkwood "
+            "Sports, DE- 2028 & 2029 MSI, PA- 2030 Sandhill Fields, DE- 2031, 2032, 2033, 2034 & 2035 Sunday November 22 nd , 2026 "
+            "Kirkwood Sports, DE- 2028 & 2029 MSI, PA- 2030 Sandhill Fields, DE- 2031,2032,2033,2034 & 2035 APPLY")
+    ev = Event(organizer="Alliance", name="The League - Fall Invitational", start_date=dt.date(2026, 11, 21))
+    sites, grads = AllianceCollector.home_sites(home, ev)
+    assert sites == [("Kirkwood Sports", None, "DE", None), ("MSI", None, "PA", None), ("Sandhill Fields", None, "DE", None)]
+    assert (min(grads), max(grads)) == (2028, 2035)
+    page = ("Date : July 9th-11th, 2027 Cost : Youth (2030) - $4195 Location : Friday-Sunday: Maryland Soccerplex 2030AA & A, "
+            "2031AA & A, 2032AA & A, 2033AA & A Troy Park & Blandair Park 2034 AA & A 2035 AA & A & 2036 Payment: A $1000 deposit")
+    assert AllianceCollector.location_venues(page) == ["Maryland Soccerplex", "Troy Park", "Blandair Park"]
