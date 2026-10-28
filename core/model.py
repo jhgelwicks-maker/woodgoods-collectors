@@ -186,6 +186,7 @@ class Event:
     address: Optional[str] = None            # street address as the site prints it ('4000 Bay Road Frederica, DE 19946')
     sites: list = field(default_factory=list)  # [(venue, city, state[, address]), ...] when the organizer lists several venues
     contacts: list = field(default_factory=list)  # [{name, email, phone, role: vendor|director|organizer}] from the event page
+    divisions: list = field(default_factory=list)  # the event's divisions as the organizer names them ('2027 Girls', 'JV Boys 2029/2030')
     vendor_fee: Optional[str] = None
     event_type: str = "tournament"
     source_url: Optional[str] = None

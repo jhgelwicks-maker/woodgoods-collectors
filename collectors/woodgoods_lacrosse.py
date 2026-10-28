@@ -79,12 +79,12 @@ def _load():
     from adapters.misc_sites import (
         TrilogyCollector, VictoryCollector, HoganCollector, ML8Collector,
         PrimeTimeCollector, AdrenalineCollector, NLFCollector)
-    from adapters.more_sites import OTLaxCollector, ExposureCollector, LegendsCollector
+    from adapters.more_sites import OTLaxCollector, ExposureCollector, LegendsCollector, CarpetbaggerCollector
     return [MLTCollector, ApexCollector, BukuCollector, PLLPlayCollector,
             NXTCollector, VictoryCollector, HoganCollector, ML8Collector,
             TrilogyCollector, PrimeTimeCollector, AdrenalineCollector,
             NLFCollector, AlohaCollector, AllianceCollector,
-            OTLaxCollector, ExposureCollector, LegendsCollector]
+            OTLaxCollector, ExposureCollector, LegendsCollector, CarpetbaggerCollector]
 
 
 def _slug(s):
@@ -132,6 +132,8 @@ def to_common(ev, collector_slug):
         "team_count": ev.team_count,
         "team_count_scope": "site",
         "age_groups": ev.age_range,
+        "divisions": ev.divisions or None,
+        "division_count": len(ev.divisions) or None,
         "listing_url": ev.source_url,
         "official_url": ev.source_url,
         # the app's Locations panel lists venues[]; a site row is one venue. Last year's numbers at the venue come with the

@@ -80,6 +80,11 @@ def _town_key(city):
 STATE_NAME = re.compile(r"\b(" + "|".join(sorted(map(re.escape, FULL_STATE), key=len, reverse=True)) + r")\b", re.I)
 
 
+# place abbreviations organizers and Tourney Machine use in event names ('2025 LKN Fall Boys Classic' = Carpetbagger's
+# 'Lake Norman Fall Classic (Boys)')
+ABBREV = {"LKN": "Lake Norman", "AVL": "Asheville"}
+
+
 KEEP_NOTE = re.compile(r"\b(boys?|girls?|coed|hs|high school|youth|middle|ms|varsity|jv)\b", re.I)
 
 
@@ -87,6 +92,7 @@ def match_name(name):
     """Name used for matching: notes dropped ('– Site 2', '– site lists yr as 2026, presumed 2027', '(UPDATED THUR)',
     '(BOX)'; '(HS)' and '(Girls)' stay), state names as their codes ('Connecticut' = 'CT')."""
     n = re.sub(r"\s+[-–—]\s+site\b.*$", "", name or "", flags=re.I)
+    n = re.sub(r"\b(LKN|AVL)\b", lambda m: ABBREV[m.group(1).upper()], n, flags=re.I)
     n = re.sub(r"\(([^)]*)\)", lambda m: m.group(0) if KEEP_NOTE.search(m.group(1)) else " ", n)
     return re.sub(r"\s+", " ", STATE_NAME.sub(lambda m: FULL_STATE[m.group(1).lower()], n)).strip()
 

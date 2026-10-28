@@ -121,11 +121,17 @@ def page_contacts(text, domains=None):
         email = m.group(0).strip(".").lower()
         before = text[max(prev, m.start() - 140):m.start()]
         prev = m.end()
-        if email in seen or JUNK_EMAIL.search(email) or HOTEL.search(email): continue
+        if JUNK_EMAIL.search(email) or HOTEL.search(email): continue
         if domains and not own_domain(email, domains): continue
-        seen.add(email)
         nm = NAME_BEFORE.search(before[-45:])
         name = nm.group(1) if nm and not NOT_NAME.search(nm.group(1)) else None
+        if email in seen:                    # named further down ('contact us trent@...' ... 'Trent Brown: trent@...')
+            for c in out:
+                if c["email"] == email and name and not c["name"]:
+                    c["name"] = name
+                    if c["role"] == "organizer": c["role"] = "director"
+            continue
+        seen.add(email)
         local = email.split("@")[0]
         role = ("vendor" if VENDOR.search(local) or VENDOR.search(before[-110:]) else
                 "director" if name or DIRECTOR.search(before[-110:]) else "organizer")

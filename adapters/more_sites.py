@@ -244,3 +244,117 @@ class LegendsCollector(BaseCollector):
                 pass
             out.append(ev)
         return out
+
+
+class CarpetbaggerCollector(BaseCollector):
+    """Carpetbagger Lacrosse (cblax.org). Each card on /events/ pairs the event's own page ('Details') with its LeagueApps
+    tournament ('Register' -> /app/tournaments/<id>). LeagueApps' member-portal JSON gives the dates and every division
+    ('2027 Girls', 'Varsity Boys 2027/2028'; 83 across the six events); the cblax.org page gives the venues with street
+    addresses, split by boys and girls when they play apart ('BOYS DIVISIONS ... Mazeppa Park, Cornelius Road Park /
+    GIRLS DIVISIONS ... Richard Barry Memorial Park'), and the organizers' contacts. LeagueApps lists one venue for all
+    divisions, so the page's venues win."""
+    slug = "cblax"
+    organizer = "Carpetbagger"
+    tier = 1
+    URL = "https://cblax.org/events/"
+    API = "https://api.leagueapps.io/api/member-portal/cblacrosse/tournaments/{}"
+    FACILITY = r"(?:Park|Complex|School|Center|Centre|Fields|Sportsplex|Stadium)"
+
+    def cards(self):
+        """[(event page, LeagueApps tournament id)] in the order the site lists them."""
+        soup = self.soup(self.URL)
+        out, page = [], None
+        for a in soup.find_all("a", href=True):
+            if re.search(r"cblax\.org/events/[\w-]+/?$", a["href"]):
+                page = a["href"]
+            m = re.search(r"/app/tournaments/(\d+)", a["href"])
+            if m and page:
+                out.append((page, m.group(1)))
+                page = None
+        return out
+
+    @classmethod
+    def venues(cls, text):
+        """{'boys'|'girls'|None: [(venue, city, state, address)]} from the page's 'Tournament Locations' section."""
+        sec = re.search(r"Tournament Locations\s+(.+?)(?:Join Us|Escape the Summer Heat|Make It a|Finish the Year|Divisions\b)", text)
+        # one-venue pages ('All games will be played at Mazeppa Park ...'): the longest 'Details ... Divisions' stretch,
+        # not the page's tab menu ('Details Hotels Divisions')
+        sec = sec.group(1) if sec else max(re.findall(r"\bDetails\s+(.*?)\bDivisions\b", text), key=len, default="")
+        parts = re.split(r"\b(BOYS|GIRLS) DIVISIONS\b", sec)
+        groups = [(None, parts[0])] + [(parts[i].lower(), parts[i + 1]) for i in range(1, len(parts) - 1, 2)]
+        out = {}
+        for gender, chunk in groups:
+            found = []
+            addrs = addresses_in(chunk)
+            for pos, addr in addrs:                 # 'Mazeppa Park 645 Mazeppa Rd, Mooresville, NC 28115'
+                lead = re.split(r"[.:!]\s+|\b(?:Bathrooms|bathrooms|restrooms|spectators|together)\b", chunk[:pos].strip())[-1]
+                name = re.search(rf"((?:[A-Z][\w.&'-]*\s+){{0,4}}{cls.FACILITY})\s*$", lead.strip())
+                city, state = split_city_state(re.sub(r"\s+\d{5}(?:-\d{4})?$", "", addr.split(",", 1)[1].strip()) if "," in addr else "")
+                if name:
+                    found.append((name.group(1).strip(), city, state, addr))
+            if not addrs:                           # names only: 'Buncombe County Sports Park Premier tournament facility ...'
+                for m in re.finditer(rf"((?:[A-Z][\w.&'-]*\s+){{0,4}}{cls.FACILITY})\s*,?\s+(?:Premier|Additional|features|featuring)", chunk):
+                    found.append((m.group(1).strip(), None, None, None))
+            names = set()
+            uniq = [v for v in found if not (v[0] in names or names.add(v[0]))]
+            if uniq:
+                out[gender] = uniq
+        return out
+
+    def collect(self):
+        try:
+            cards = self.cards()
+        except Exception as e:  # noqa: BLE001
+            self.errors.append(f"{self.slug}: {e}")
+            return []
+        out = []
+        for page, tid in cards:
+            try:
+                t = self.session.get(self.API.format(tid), timeout=30, headers={"Accept": "application/json"}).json()
+            except Exception as e:  # noqa: BLE001
+                self.errors.append(f"{self.slug}: tournament {tid}: {e}")
+                continue
+            start, end = (datetime.date.fromisoformat(t[k]) if t.get(k) else None for k in ("startDate", "endDate"))
+            if not start:
+                continue
+            divisions = t.get("divisions") or []
+            try:
+                text = details.full_text(self.get(page))
+            except Exception:  # noqa: BLE001
+                text = ""
+            contacts = details.page_contacts(text, {"cblax.org"})
+            town = re.search(r"\b20\d\d\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),\s*(North Carolina|South Carolina|Virginia|Georgia|Tennessee)\b", text)
+            town = (town.group(1), {"North Carolina": "NC", "South Carolina": "SC", "Virginia": "VA", "Georgia": "GA", "Tennessee": "TN"}[town.group(2)]) if town else (None, None)
+            by_gender = self.venues(text)
+            base = re.sub(r"^20\d\d\s+", "", t.get("name") or "").strip()
+            # boys and girls at different venues are two events; otherwise one event for all its divisions
+            plan = ([(g, by_gender[g]) for g in ("boys", "girls")] if set(by_gender) >= {"boys", "girls"}
+                    else [(None, by_gender.get(None) or next(iter(by_gender.values()), []))])
+            for gender, sites in plan:
+                divs = [d for d in divisions if not gender or d.get("gender") == {"boys": "male", "girls": "female"}[gender]]
+                genders = {d.get("gender") for d in divs}
+                g = gender or ("coed" if genders >= {"male", "female"} else "boys" if genders == {"male"} else "girls" if genders == {"female"} else "unknown")
+                grads = sorted(int(y) for d in divs for y in re.findall(r"\b(20[2-4]\d)\b", d.get("name") or ""))
+                sites = [(v, c or town[0], s or town[1], a) for v, c, s, a in sites] or [((t.get("location") or {}).get("name"), town[0], town[1], None)]
+                ev = Event(organizer=self.organizer, name=f"{base} ({gender.title()})" if gender else base,
+                           start_date=start, end_date=end or start, raw_date=f"{t.get('startDate')} to {t.get('endDate')}",
+                           venue=sites[0][0], city=sites[0][1], state=sites[0][2], address=sites[0][3],
+                           sites=sites if len(sites) > 1 else [], gender=g, source_url=page,
+                           age_range=(f"{grads[0]}–{grads[-1]}" if grads[0] != grads[-1] else str(grads[0])) if grads else None,
+                           divisions=[d.get("name") for d in divs], contacts=contacts,
+                           event_type="tournament")
+                out.append(ev)
+        # a venue one page gives with its town or street address fills the same venue on pages that don't
+        # ('Buncombe County Sports Park' on the Asheville Fall Classic page has no town; the summer pages place it)
+        known = {}
+        for ev in out:
+            for v, c, st, a in ev.sites or [(ev.venue, ev.city, ev.state, ev.address)]:
+                if v and c and (v not in known or (a and not known[v][2])):
+                    known[v] = (c, st, a)
+        for ev in out:
+            if ev.venue in known and not ev.city:
+                ev.city, ev.state = known[ev.venue][:2]
+                ev.address = ev.address or known[ev.venue][2]
+            ev.sites = [(v, c or known.get(v, (None,))[0], st or known.get(v, (None, None))[1], a or known.get(v, (None, None, None))[2])
+                        for v, c, st, a in ev.sites]
+        return out

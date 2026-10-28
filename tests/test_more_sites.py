@@ -6,7 +6,7 @@ import datetime as dt
 from bs4 import BeautifulSoup
 
 from adapters import details
-from adapters.more_sites import OTLaxCollector, ExposureCollector, LegendsCollector, title_case, month_span, dates_with_year
+from adapters.more_sites import OTLaxCollector, ExposureCollector, LegendsCollector, CarpetbaggerCollector, title_case, month_span, dates_with_year
 from core.model import Event
 
 
@@ -155,3 +155,38 @@ def test_contacts_keep_the_organizers_own_addresses_with_their_own_roles():
                                                     "bob.smith@gmail.com": "director"}
     assert details.site_domain("https://events.nxtsports.com/site/x") == "nxtsports.com"
     assert details.page_contacts("View Recap info@apex.test")[0]["name"] is None
+
+
+CB_LIST = """<a href="https://cblax.org/events/lkn-fall-classic/">Details</a><a href="http://cblacrosse.leagueapps.com/app/tournaments/11">Register</a>
+<a href="https://cblax.org/events/christmas-jam/">Details</a><a href="http://cblacrosse.leagueapps.com/app/tournaments/22">Register</a>"""
+CB_LKN = """<p>Details Hotels Divisions Local Info Details Boys and Girls November 7-8, 2026 Mooresville and Huntersville, NC
+Tournament Locations Games will be played across three excellent facilities. BOYS DIVISIONS All boys' games will be played at Mazeppa
+Park and Cornelius Road Park in Mooresville. Mazeppa Park 645 Mazeppa Rd, Mooresville, NC 28115 Mazeppa Park features six lighted
+fields Permanent Bathrooms Cornelius Road Park 247 Cornelius Rd, Mooresville, NC 28115 Cornelius Road Park features: 3 turf fields
+GIRLS DIVISIONS All girls' games will be played at Richard Barry Memorial Park in Huntersville. Richard Barry Memorial Park 13707
+Beatties Ford Rd, Huntersville, NC 28078 Join Us at Lake Norman! Divisions ... contact us trent@cblax.org</p>
+<footer>Trent Brown: trent@cblax.org Steve Schattner: steve@cblax.org</footer>"""
+CB_JAM = """<p>Details Hotels Divisions Local Info Details Boys and Girls Sunday December 6, 2026 Mazeppa Rd Park Mooresville, NC
+Fast-Paced Lacrosse. Mazeppa Park 645 Mazeppa Rd, Mooresville, NC 28115 All games will be played at Mazeppa Park. Divisions Varsity</p>"""
+
+
+def test_carpetbagger_pairs_pages_with_leagueapps_and_splits_boys_and_girls_venues(monkeypatch):
+    c = CarpetbaggerCollector(use_cache=False)
+    fake_pages(c, monkeypatch, {c.URL: CB_LIST, "https://cblax.org/events/lkn-fall-classic/": CB_LKN,
+                                "https://cblax.org/events/christmas-jam/": CB_JAM})
+    tours = {"11": {"name": "2026 Lake Norman Fall Classic", "startDate": "2026-11-07", "endDate": "2026-11-08",
+                    "location": {"name": "Mazeppa Road Park"},
+                    "divisions": [{"name": "2027 Girls", "gender": "female"}, {"name": "2035 Girls", "gender": "female"},
+                                  {"name": "2028 Boys", "gender": "male"}, {"name": "2036 Boys", "gender": "male"}]},
+             "22": {"name": "2026 Christmas Jam", "startDate": "2026-12-06", "endDate": "2026-12-06", "location": {"name": "Mazeppa Road Park"},
+                    "divisions": [{"name": "Varsity Boys 2027/2028", "gender": "male"}, {"name": "Elementary Girls 2033/2034", "gender": "female"}]}}
+    class Resp:
+        def __init__(self, d): self.d = d
+        def json(self): return self.d
+    monkeypatch.setattr(c.session, "get", lambda url, **k: Resp(tours[url.rsplit("/", 1)[1]]))
+    boys, girls, jam = c.collect()
+    assert (boys.name, boys.gender, boys.age_range, boys.divisions) == ("Lake Norman Fall Classic (Boys)", "boys", "2028–2036", ["2028 Boys", "2036 Boys"])
+    assert [s[:3] for s in boys.sites] == [("Mazeppa Park", "Mooresville", "NC"), ("Cornelius Road Park", "Mooresville", "NC")]
+    assert (girls.venue, girls.city, girls.age_range) == ("Richard Barry Memorial Park", "Huntersville", "2027–2035")
+    assert (jam.name, jam.gender, jam.venue, jam.city, jam.age_range) == ("Christmas Jam", "coed", "Mazeppa Park", "Mooresville", "2027–2034")
+    assert [(x["name"], x["email"]) for x in boys.contacts] == [("Trent Brown", "trent@cblax.org"), ("Steve Schattner", "steve@cblax.org")]
