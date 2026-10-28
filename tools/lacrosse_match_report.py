@@ -397,6 +397,21 @@ def app_address(r):
     return a or ""
 
 
+CONTACT_ROLE = {"vendor": "vendor/sponsor", "director": "director", "organizer": "organizer inbox"}
+
+
+def event_details(r):
+    """What the organizer's page says beyond date and place: boys/girls, age divisions (grad years), event type, the
+    vendor/sponsor inbox, every contact with its role, and any note on the date."""
+    raw = r.get("raw") or {}
+    contacts = raw.get("contacts") or []
+    return {"boys_girls": raw.get("gender") or "", "age_divisions": r.get("age_groups") or "",
+            "event_type": raw.get("event_type") or "", "vendor_contact": r.get("vendor_contact_email") or "",
+            "contacts": "; ".join(" ".join(x for x in (c.get("name"), c.get("email"), c.get("phone"),
+                                                        f"({CONTACT_ROLE.get(c.get('role'), c.get('role'))})") if x) for c in contacts),
+            "date_note": raw.get("date_note") or ""}
+
+
 def place(r):
     city, st = _city_state(r)
     return ", ".join(x for x in (r.get("venue_name"), ", ".join(x for x in (city, st) if x)) if x)
@@ -718,7 +733,8 @@ def main(argv=None):
                         extra_site[i] = matches[i].pop(kind)[0][0]
 
     cols = ["status", "badge", "badge_description", "tags", "details", "organizer", "event", "start", "end", "place", "address",
-            "address_source", "organizer_url", "app_match", "app_event", "app_start", "app_end", "app_place", "app_address", "app_guessed_from",
+            "address_source", "boys_girls", "age_divisions", "event_type", "vendor_contact", "contacts", "date_note",
+            "organizer_url", "app_match", "app_event", "app_start", "app_end", "app_place", "app_address", "app_guessed_from",
             "last_year_here", "replaces", "days_off", "match_score",
             "evidence", "also_in_app", "data_flags", "app_dedupe_key", "app_listing_url"]
     lines, counts, checks = [], defaultdict(int), []
@@ -760,6 +776,7 @@ def main(argv=None):
                       "organizer": r.get("organizer_name"),
                       "event": r["name"], "start": r["start_date"], "end": r["end_date"], "place": place(r),
                       "address": r["_address"], "address_source": r["_address_source"],
+                      **event_details(r),
                       "organizer_url": r.get("listing_url"), "app_match": KIND_LABEL.get(primary, primary) if primary else "",
                       "app_event": a.get("name", ""), "app_start": a.get("start_date", ""), "app_end": a.get("end_date", ""),
                       "app_place": place(a) if a else "", "app_address": app_address(a) if a else "",
