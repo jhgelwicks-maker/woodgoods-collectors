@@ -24,4 +24,39 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FF_COOKIE: ${{ secrets.FF_COOKIE }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          # the organizer-site rows, kept for the badges job below
+          WG_ROWS_OUT: ${{ matrix.source == 'woodgoods_lacrosse' && 'lacrosse_rows.jsonl' || '' }}
         run: python run.py ${{ matrix.source }}
+      - name: Keep the organizer-site rows for the badges job
+        if: ${{ matrix.source == 'woodgoods_lacrosse' && always() && hashFiles('lacrosse_rows.jsonl') != '' }}
+        uses: actions/upload-artifact@v4
+        with: { name: lacrosse-rows, path: lacrosse_rows.jsonl, retention-days: 3 }
+
+  # Organizer-website badges (Confirmed / Date corrected / New ...): once every source has posted its rows, match this
+  # week's organizer-site events against the app's events and send the badge records, which also hide the placeholders,
+  # sheet rows and old copies the organizer rows replace. Needs the EXPORT_KEY secret (the app's read-only export).
+  badges:
+    needs: collect
+    if: ${{ always() }}           # still runs when another source failed
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        id: rows
+        continue-on-error: true   # no rows when the lacrosse step failed: nothing to check this week
+        with: { name: lacrosse-rows, path: rows }
+      - name: Pull the app's events, history and venues
+        if: ${{ steps.rows.outcome == 'success' }}
+        env:
+          EXPORT_KEY: ${{ secrets.EXPORT_KEY }}
+        run: python tools/backup_db.py --tables event_candidates event_history venues --out export
+      - name: Match and send badges
+        if: ${{ steps.rows.outcome == 'success' }}
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_KEY: ${{ secrets.INGEST_KEY }}
+        run: python tools/lacrosse_match_report.py --export-dir export --scraped rows/lacrosse_rows.jsonl --out out/lacrosse_match.csv --send

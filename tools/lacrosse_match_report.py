@@ -495,15 +495,29 @@ def leftover_rows(export_dir, scr, today):
     for r in scr:
         if f"{r['source']}:{r['source_event_id']}" in in_app:
             by[(r["source"], base(r["name"]), _date(r["start_date"]))].append(r)
+    # a scrape missing many of the events the app shows for that organizer (a page that failed to load: 3+ events and
+    # over 30% gone at once) retires nothing as 'gone': those events are probably still on the site. Events, not rows:
+    # an event's sites and old copies count once
+    live, got = defaultdict(set), defaultdict(set)
+    for a in app:
+        e0 = _date(a.get("end_date")) or _date(a.get("start_date"))
+        if a.get("source") in sources and a.get("status") not in ("duplicate", "stale") and e0 and e0 >= today:
+            live[a["source"]].add((base(a.get("name")), _date(a.get("start_date"))))
+    for r in scr:
+        if (_date(r.get("end_date")) or _date(r["start_date"])) >= today:
+            got[r["source"]].add((base(r["name"]), _date(r["start_date"])))
+    partial = {src for src in sources if len(live[src] - got[src]) >= 3 and len(live[src] - got[src]) > 0.3 * len(live[src])}
     out = []
     for a in app:
-        if a.get("source") not in sources or a.get("status") == "duplicate" or a.get("dedupe_key") in keys: continue
+        if a.get("source") not in sources or a.get("status") in ("duplicate", "stale") or a.get("dedupe_key") in keys: continue
         s0, e0 = _date(a.get("start_date")), _date(a.get("end_date"))
         if not s0 or (e0 or s0) < today: continue
         sibs = sorted(by.get((a["source"], base(a.get("name")), s0), []), key=lambda r: r["name"])
         if not sibs and any(base(r["name"]) == base(a.get("name")) and _date(r["start_date"]) == s0 for r in scr):
             continue                                   # its current row isn't in the app yet: wait for it
         town = [r for r in sibs if _town_key(r.get("city")) and _town_key(r.get("city")) == _town_key(a.get("city"))]
+        if not sibs and a["source"] in partial:
+            continue
         out.append((a, (town if len(town) == 1 else sibs or [None])[0]))
     return out
 
@@ -828,7 +842,9 @@ def main(argv=None):
             batch = ready
         if not batch:
             sys.exit(f"no badge record for {args.send_one or args.send_event}")
-        send_checks(batch)
+        res = send_checks(batch) or {}
+        if res.get("failed") and os.environ.get("GITHUB_ACTIONS"):
+            print(f"::warning::{len(res['failed'])} badge records saved but not applied; the next weekly run retries them")
     return out
 
 
@@ -913,6 +929,7 @@ def send_checks(batch, size=10):
     except ImportError:
         ctx = ssl.create_default_context()
     saved, applied, failed, queued = 0, 0, [], 0
+    by_key = {c["app_dedupe_key"]: c for c in batch}
     for i in range(0, len(batch), size):
         body = json.dumps({"source": "organizer-check", "confirmations": batch[i:i + size]}, default=str).encode()
         req = urllib.request.Request(url, data=body, method="POST",
@@ -928,9 +945,18 @@ def send_checks(batch, size=10):
         queued += len(reply.get("queued") or [])
         print(f"  sent {len(batch[i:i + size])}: saved {reply.get('saved')}, applied {reply.get('applied')}, "
               f"queued {len(reply.get('queued') or [])}, errors {len(reply.get('errors') or [])}")
+    # a record the app saved but couldn't apply in time (its 30-second limit) gets one more try on its own
+    retry = [by_key[k] for k in dict.fromkeys(str(e).split(": ", 1)[0] for e in failed) if k in by_key] if size > 1 else []
+    if retry:
+        print(f"  retrying {len(retry)} not applied, one at a time")
+        failed = []
+        for c in retry:
+            r = send_checks([c], size=1)
+            applied += r["applied"]; failed += r["failed"]
     # 'saved' = the badge is stored; 'applied' = the app also linked history / copied data / hid placeholders for it
     print(f"badge records saved: {saved} of {len(batch)}; applied: {applied}; queued for the app's background job: {queued}")
     for e in failed: print(f"  NOT APPLIED {e}")
+    return {"saved": saved, "applied": applied, "failed": failed}
 
 
 if __name__ == "__main__":

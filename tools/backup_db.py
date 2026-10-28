@@ -1,6 +1,7 @@
 """Download a full copy of the Woodgoods Ops database to this Mac.
 
     python tools/backup_db.py
+    python tools/backup_db.py --tables event_candidates event_history venues --out DIR    # just these, into DIR
 
 Settings: ~/WoodGoodsAI/.export.env (EXPORT_KEY=..., optional EXPORT_URL=...), never committed.
 Output:   ~/WoodGoodsAI/backup/db/current/<table>.jsonl  every row, every column (restore copy)
@@ -25,11 +26,11 @@ CSV_COLS = {
 }
 
 def settings():
-    env = {}
+    env = {k: os.environ[k] for k in ("EXPORT_KEY", "EXPORT_URL") if os.environ.get(k)}     # GitHub Actions secrets
     if os.path.exists(ENV_FILE):
         for line in open(ENV_FILE):
             if "=" in line and not line.lstrip().startswith("#"):
-                k, v = line.strip().split("=", 1); env[k.strip()] = v.strip().strip('"')
+                k, v = line.strip().split("=", 1); env.setdefault(k.strip(), v.strip().strip('"'))
     if not env.get("EXPORT_KEY"):
         sys.exit(f"EXPORT_KEY missing: put it in {ENV_FILE}")
     return env.get("EXPORT_URL", "https://opswg.lovable.app/api/public/export"), env["EXPORT_KEY"]
@@ -97,5 +98,29 @@ def main():
     big = ", ".join(f"{k} {v:,}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:4])
     log(f"ok: {len(counts)} tables, {sum(counts.values()):,} rows in {(time.time() - t0) / 60:.1f} min ({big})")
 
+def pull(tables, out):
+    """Just these tables into out/<table>.jsonl (the weekly badge step: event_candidates, event_history, venues)."""
+    url, key = settings()
+    os.makedirs(out, exist_ok=True)
+    have = {t["name"]: t["rows"] for t in get(url, key)["tables"]}
+    for name in tables:
+        n, after = 0, None
+        with open(os.path.join(out, f"{name}.jsonl"), "w") as f:
+            while True:
+                page = get(url, key, table=name, after=after, limit=PAGE)
+                for r in page["rows"]:
+                    f.write(json.dumps(r) + "\n")
+                n += len(page["rows"]); after = page.get("next_after")
+                if not after: break
+        if n < have.get(name, 0):
+            raise RuntimeError(f"{name}: got {n} rows, app reported {have[name]}")
+        print(f"{name}: {n:,} rows", flush=True)
+
+
 if __name__ == "__main__":
-    main()
+    if "--tables" in sys.argv:
+        args = sys.argv[sys.argv.index("--tables") + 1:]
+        out = args[args.index("--out") + 1] if "--out" in args else "export"
+        pull([a for a in args[:args.index("--out")] if a] if "--out" in args else args, out)
+    else:
+        main()

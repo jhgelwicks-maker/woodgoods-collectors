@@ -16,6 +16,7 @@ import re, datetime, logging, dataclasses
 from . import common
 from .common import log
 from core.model import STATES as STATE_CODES
+from adapters import details
 
 FACILITY = re.compile(r"\b(park|parks|complex|fields?|center|centre|\w*plex|stadium|university|college|academy|school|hs|club|"
                       r"grounds|arena|farm|sports|athletic|athletics|recreation|turf|dome|campus|commons|kp|fieldhouse)\b", re.I)
@@ -78,10 +79,12 @@ def _load():
     from adapters.misc_sites import (
         TrilogyCollector, VictoryCollector, HoganCollector, ML8Collector,
         PrimeTimeCollector, AdrenalineCollector, NLFCollector)
+    from adapters.more_sites import OTLaxCollector, ExposureCollector, LegendsCollector
     return [MLTCollector, ApexCollector, BukuCollector, PLLPlayCollector,
             NXTCollector, VictoryCollector, HoganCollector, ML8Collector,
             TrilogyCollector, PrimeTimeCollector, AdrenalineCollector,
-            NLFCollector, AlohaCollector, AllianceCollector]
+            NLFCollector, AlohaCollector, AllianceCollector,
+            OTLaxCollector, ExposureCollector, LegendsCollector]
 
 
 def _slug(s):
@@ -111,6 +114,7 @@ def to_common(ev, collector_slug):
     # 'City, ST' only with a real town: MLT gives just a venue and a state, and 'Farmingdale State College, NY' here
     # became the town 'Farmingdale State College' (normalize() reads the town from city_states)
     city_state = f"{city}, {ev.state}" if city and ev.state else None
+    vendor = next((c for c in ev.contacts or [] if c.get("role") == "vendor"), None)
 
     return {
         "source": f"wg-{collector_slug}",
@@ -133,13 +137,18 @@ def to_common(ev, collector_slug):
         # the app's Locations panel lists venues[]; a site row is one venue. Last year's numbers at the venue come with the
         # badge records (tools/lacrosse_match_report.py): this run has no history, and venues[] is replaced every week
         "venues": [{"venue_name": venue, "address": ev.address, "city": city, "state": ev.state}] if venue else [],
+        # the inbox the organizer gives vendors and sponsors (OT Lacrosse: 'All sponsors and vendors can send an inquiry to
+        # us at info@otlax.com'): the app's vendor contact
+        "vendor_contact_email": vendor["email"] if vendor else None,
+        "vendor_contact_name": vendor["name"] if vendor else None,
         # organizer pages give no field maps; and since 2026-10-26 the app rejects new rows with has_field_map empty
         "has_field_map": False,
         "raw": {"gender": ev.gender, "event_type": ev.event_type,
                 "raw_date": ev.raw_date, "collector": collector_slug,
                 "college_coaches": ev.college_coaches, "date_note": ev.date_note,
                 # street address: the app's venue geocoder reads raw.address (Census) before falling back to the name
-                "address": ev.address},
+                "address": ev.address,
+                "contacts": ev.contacts or None},
     }
 
 
@@ -149,7 +158,7 @@ def collect(only=None):
         if only and cls.slug not in only:
             continue
         c = cls()
-        evs = c.run()
+        evs = details.enrich(c, c.run())           # age divisions and contacts from each event's own page
         errors += len(c.errors)
         n = len(rows)
         for ev in evs:
@@ -157,3 +166,18 @@ def collect(only=None):
                 rows.append(to_common(site, c.slug))
         log.info("wg-%s: %d events, %d rows", c.slug, len(evs), len(rows) - n)
     return rows, errors
+
+
+ROLE = {"vendor": "vendor_coordinator", "director": "director", "organizer": "organizer"}
+
+
+def contact_updates(rows):
+    """The app's {"contacts": [...]} payload for these rows: each contact the organizer's page gives, on the row it came
+    with (the app matches a contact by row + email, so weekly resends update rather than duplicate)."""
+    out = []
+    for r in rows:
+        for c in (r.get("raw") or {}).get("contacts") or []:
+            out.append({"dedupe_key": f"{r['source']}:{r['source_event_id']}", "name": c.get("name"), "role": ROLE.get(c.get("role"), "other"),
+                        "email": c.get("email"), "phone": c.get("phone"), "source_url": r.get("listing_url"),
+                        "confidence": 0.9 if c.get("role") in ("vendor", "director") else 0.7, "enriched_via": "site"})
+    return out

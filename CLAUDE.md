@@ -72,9 +72,9 @@ games, fields[], field_count, schedule[]}), `fields_used`, `teams_per_field`,
 | eventeny | national feed `eventeny.com/events/?page=N` (~1,000 events; the `?state=` filter only applies to page 1, so don't loop states); JSON-LD on each event page gives start/end/location/organizer; vendor page gives fees/deadline/rain date | 3 workers |
 | organizers.find | who runs an event series + their website. Stages, cheapest first: stored listings (app's saved listings incl. past ones) → Tourney Machine live search → event PDFs (hints only) → Claude web research (paid). Listing stages prove the match with `event_match` (never name alone); web/PDF/model answers must pass `verify()` (we fetch the page and it must name the event AND its town/venue). Status: found_verified / needs_review / not_found | accuracy: `tools/eval_find_organizer.py` vs `tests/fixtures/find_organizer_truth.json` (38 real events); `organizers-eval.yml` runs it in Actions and writes summaries to branch `eval-results`. Replaced organizer_discovery.py (Oct 2026) |
 | organizers.crawl | Crawl Organizer, lacrosse first, run locally (not in weekly.yml yet). A organizer list (`registry.py`: the 14 known + Tourney Machine organizers from a local export + `lacrosse_websites.json`, names/websites only) → B find event/contact/vendor pages → C extract (`extract.py`: schema.org, date-anchored blocks, event pages; Claude only with `--ai`) → D match (`match.py`: duplicate of an app listing? confirms/moves a placeholder? via `event_match`, one-to-one). Event rows `org-<slug>` carry `venues[]` so the app maps facilities. Organizer records (email/phone/vendor page/vendor contact) go to `~/WoodGoodsAI/crawl/<date>/`, never the repo, until the app has an organizers payload. Vendor contact only for organizers reaching 20+ teams by precedent (never by current registrations) | `python -m collectors.organizers.crawl --list / --org apex / --known`; accuracy vs the 14 scrapers: `tools/eval_crawl.py`. `--send` posts only new events for organizers without a scraper |
-| woodgoods_lacrosse | wraps 14 organizer-site scrapers in `adapters/` + `core/` (NXT, MLT, APEX, Trilogy, Victory, PrimeTime, Adrenaline, Aloha, Alliance, Buku, Hogan's, ML8, NLF, PLL). Sources `wg-<org>` | 205 rows/zero errors on 2026-10-06; Alliance returned 0 — check. Rarely have team counts |
+| woodgoods_lacrosse | wraps 17 organizer-site scrapers in `adapters/` + `core/` (NXT, MLT, APEX, Trilogy, Victory, PrimeTime, Adrenaline, Aloha, Alliance, Buku, Hogan's, ML8, NLF, PLL; `more_sites.py`: OT Lacrosse, Exposure Events (lacrosse listings, JSON via the page's own POST + token; skips organizers we scrape), Legends (event list base64-encoded in the page)). Sources `wg-<org>`. `adapters/details.py` fills age divisions (grad years from years/grades/U-ages, school-year aware) and contacts (organizer's own domain only; roles vendor/director/organizer) from each event page; contacts go to the app's `{"contacts":[...]}` after the rows (run.py) | 414 rows/zero errors on 2026-10-27; ages on 392, contacts on 375, a vendor inbox on 76. Rarely have team counts |
 
-Secrets (GitHub → Settings → Secrets → Actions): `INGEST_URL`, `INGEST_KEY`, `ANTHROPIC_API_KEY`
+Secrets (GitHub → Settings → Secrets → Actions): `INGEST_URL`, `INGEST_KEY`, `EXPORT_KEY` (badges job), `ANTHROPIC_API_KEY`
 (may be absent), `ANTHROPIC_WORKSPACE_ID` (optional), `FF_COOKIE` (optional). `run.py` skips
 collectors whose required key is missing.
 
@@ -82,13 +82,17 @@ collectors whose required key is missing.
 
 - `organizers-eval.yml`: manual or on push to `eval/find-organizer`; measures Find Organizer accuracy and cost.
 
-- `weekly.yml`: Mon 06:00 UTC, matrix over the five sources, fail-fast off, 170-min timeout each.
+- `weekly.yml`: Mon 06:00 UTC, matrix over the five sources, fail-fast off. Then the `badges` job (after every source,
+  even if one failed): pulls event_candidates/event_history/venues with `EXPORT_KEY`, runs `tools/lacrosse_match_report.py`
+  on that week's organizer-site rows (artifact from the woodgoods_lacrosse step) and sends the badge records. A scrape
+  missing 3+ events and >30% of an organizer's app events retires nothing as gone; records not applied are retried once.
 - `backfill.yml`: manual. Inputs start/end/shard_size. Plan job builds the matrix newest-first.
 
 ## Mac-side setup (outside the repo, private)
 
 - `~/WoodGoodsAI/.ingest.env` (INGEST_URL, INGEST_KEY) and `~/WoodGoodsAI/.export.env` (EXPORT_KEY). Never commit.
-  GitHub's INGEST_KEY secret and Lovable's must match the Mac's. EXPORT_KEY exists only in Lovable and on the Mac.
+  GitHub's INGEST_KEY secret and Lovable's must match the Mac's. EXPORT_KEY lives in Lovable, on the Mac and (for the
+  weekly badges job) in GitHub's secrets.
 - Backfill now runs on the Mac: `python -m collectors.backfill_local START END --parallel 4`. Rows are written to
   `~/WoodGoodsAI/backup/backfill/R<a>-<b>.jsonl` before posting; `.done` markers make reruns resume;
   `python -m collectors.replay_history <files>` resends. Skips unfinished events and junk (pre-2014 dates, test/mock names).

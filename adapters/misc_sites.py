@@ -963,6 +963,8 @@ class NLFCollector(BaseCollector):
             except Exception:  # noqa: BLE001
                 continue
             title = self.txt(page.select_one("h1")) or ""
+            if url.rstrip("/") == self.INDEX.rstrip("/") or re.fullmatch(r"(?i)(?:fall|spring|summer|winter)\s+events", title.strip()):
+                continue                                # the season's index page itself ('FALL EVENTS'), not an event
             body = re.sub(r"\s+", " ", page.get_text(" ", strip=True))[:3000]
             m = DATE_INLINE.search(body)
             if not title or not m:

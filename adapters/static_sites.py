@@ -5,6 +5,7 @@ These are the cheap, high-yield sources. Verified against live markup.
 from __future__ import annotations
 import re, datetime
 from core.base import BaseCollector
+from adapters import details
 from core.model import Event, parse_date_range, split_city_state, normalize_gender
 
 
@@ -157,6 +158,7 @@ class ApexCollector(BaseCollector):
                     start_date=start, end_date=end, raw_date=raw,
                     venue=venue, city=city, state=state, gender=gender, address=address,
                     event_type=etype, source_url=url,
+                    age_range=details.grad_years(blob, start),      # the card's 'Classes: 2030 2029 2028 2027' badges
                 ))
         return self._dedupe(out)
 

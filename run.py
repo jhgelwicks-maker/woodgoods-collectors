@@ -20,6 +20,10 @@ def main():
         try:
             mod = importlib.import_module(f"collectors.{name}")
             rows, errors = mod.collect()
+            if os.environ.get("WG_ROWS_OUT"):                     # the weekly badge step reads them (weekly.yml)
+                import json
+                with open(os.environ["WG_ROWS_OUT"], "w") as f:
+                    for r in rows: f.write(json.dumps(r, default=str) + "\n")
             n = db.upsert_candidates(rows)
             log.info("%s: %d rows, %d upserted, %d errors", name, len(rows), n, errors)
             if hasattr(mod, "collect_history"):                      # archive just-finished events into event_history
@@ -28,6 +32,14 @@ def main():
                 for i in range(0, len(hrows), 150):
                     db._post({"source": f"{name}-history", "history": [{k: (v.isoformat() if isinstance(v, datetime.date) else v) for k, v in r.items()} for r in hrows[i:i+150]]})
                 log.info("%s: %d finished events archived to history", name, len(hrows))
+            if hasattr(mod, "contact_updates"):                      # contacts the organizer pages give, after their rows
+                try:
+                    cs = mod.contact_updates(rows)
+                    for i in range(0, len(cs), 200):
+                        db._post({"contacts": cs[i:i+200]})
+                    if cs: log.info("%s: %d contacts sent", name, len(cs))
+                except Exception as e:
+                    log.warning("%s contacts step failed (rows are already saved): %s", name, e)
             if hasattr(mod, "weather_updates"):                      # last: a slow weather site can't hold back rows or history
                 try:
                     w = mod.weather_updates(rows)

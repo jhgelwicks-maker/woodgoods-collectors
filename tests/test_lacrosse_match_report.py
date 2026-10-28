@@ -367,3 +367,33 @@ def test_a_sheet_row_stays_when_the_organizer_says_less_about_the_place():
     assert L.placed({"venue_name": None, "city": "Kingston", "state": "RI"})
     assert not L.placed({"venue_name": "DE and PA", "city": None, "state": "DE"})
     assert not L.placed({"venue_name": "Multiple Locations", "city": None, "state": "CT"})
+
+
+def test_a_partial_scrape_retires_nothing_as_gone(tmp_path):
+    def pt(name, sid):
+        return {**org(name, D(30), "Dover", "DE", organizer="ML8"), "source": "wg-ml8", "source_event_id": sid}
+    scraped = [pt("Summer Challenge", "a")]                                  # 1 of the 4 events the app shows: a failed page
+    app = [{**r, "status": "new", "dedupe_key": f"wg-ml8:{r['source_event_id']}"} for r in
+           [pt("Summer Challenge", "a"), pt("Spotlight", "b"), pt("D3 Showcase", "c"), pt("Summer Nationals", "d")]]
+    _run(tmp_path, app, scraped)
+    recs = {r["app_dedupe_key"] for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert not recs & {"wg-ml8:b", "wg-ml8:c", "wg-ml8:d"}
+
+
+def test_records_not_applied_get_one_more_try_alone(monkeypatch):
+    calls = []
+    class Resp:
+        def __init__(self, body): self.body = body
+        def read(self):
+            keys = [c["app_dedupe_key"] for c in self.body["confirmations"]]
+            bad = [k for k in keys if k == "slow"] if len(keys) > 1 else []
+            return json.dumps({"saved": len(keys), "applied": len(keys) - len(bad), "errors": [f"{k}: apply failed: timeout" for k in bad]}).encode()
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def fake_urlopen(req, timeout=0, context=None):
+        body = json.loads(req.data); calls.append(len(body["confirmations"])); return Resp(body)
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("INGEST_URL", "https://app.test/api/public/ingest"); monkeypatch.setenv("INGEST_KEY", "test-key")
+    res = L.send_checks([{"app_dedupe_key": k, "status": "confirmed"} for k in ("a", "slow", "b")], size=10)
+    assert calls == [3, 1] and res["applied"] == 3 and res["failed"] == []
