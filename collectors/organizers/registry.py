@@ -66,12 +66,17 @@ def slugify(s):
 
 
 def load_seed(path=SEED):
-    """{organizer name: website}. Missing file = empty."""
+    """{organizer name: {"website": homepage, "pages": [event pages]}}. An entry may be just the homepage. Missing file = empty."""
     try:
         data = json.loads(pathlib.Path(path).read_text())
     except (FileNotFoundError, ValueError):
         return {}
-    return {k: v for k, v in data.items() if not k.startswith("_") and isinstance(v, str) and v.startswith("http")}
+    out = {}
+    for k, v in data.items():
+        v = {"website": v} if isinstance(v, str) else v
+        if not k.startswith("_") and isinstance(v, dict) and str(v.get("website", "")).startswith("http"):
+            out[k] = {"website": v["website"], "pages": [u for u in v.get("pages") or [] if u.startswith("http")]}
+    return out
 
 
 def from_app_data(export_dir):
@@ -116,11 +121,15 @@ def build(export_dir=None, seed=None):
         o["events"] += s["events"]; o["max_teams"] = max(o["max_teams"], s["max_teams"])
         o["states"] = sorted(set(o["states"]) | s["states"])
         if s["next_event"] and (not o["next_event"] or s["next_event"] < o["next_event"]): o["next_event"] = s["next_event"]
-    for name, site in seed.items():
+    for name, entry in seed.items():
+        site = entry["website"] if isinstance(entry, dict) else entry
         c = canon_org(name)
         o = orgs.setdefault(c, {"slug": slugify(name), "name": name, "canon": c, "website": None, "scraper": None,
                                 "events": 0, "max_teams": 0, "states": [], "next_event": None})
         o["website"] = o["website"] or site
+        o["seeded"] = True                    # crawl.py --seed-only crawls just these
+        if isinstance(entry, dict) and not o["scraper"]:
+            o["start_pages"] = list(dict.fromkeys((o.get("start_pages") or []) + entry["pages"]))
     out = list(orgs.values())
     for o in out:
         o["qualifies_vendor"] = o["max_teams"] >= VENDOR_MIN_TEAMS

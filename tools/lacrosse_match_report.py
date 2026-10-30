@@ -93,6 +93,7 @@ def match_name(name):
     '(BOX)'; '(HS)' and '(Girls)' stay), state names as their codes ('Connecticut' = 'CT')."""
     n = re.sub(r"\s+[-–—]\s+site\b.*$", "", name or "", flags=re.I)
     n = re.sub(r"\b(LKN|AVL)\b", lambda m: ABBREV[m.group(1).upper()], n, flags=re.I)
+    n = re.sub(r"\bH\.\s?S\.", "High School", n)       # 'FALL H.S. INVITATIONAL' = 'Fall High School Invitational
     n = re.sub(r"\(([^)]*)\)", lambda m: m.group(0) if KEEP_NOTE.search(m.group(1)) else " ", n)
     return re.sub(r"\s+", " ", STATE_NAME.sub(lambda m: FULL_STATE[m.group(1).lower()], n)).strip()
 
@@ -674,6 +675,9 @@ def main(argv=None):
     ap.add_argument("--send-event", metavar="NAME", help="send every badge record of one organizer event (all its sites and the "
                     "app rows they replace), e.g. 'Veterans Day Classic' (a test)")
     ap.add_argument("--send", action="store_true", help="send every badge record to the app")
+    ap.add_argument("--matched-only", action="store_true",
+                    help="only the records of the scraped events and the app rows they match (organizer crawl): no grey badges, "
+                         "nothing marked 'not on organizer site' or retired, since this scrape covers only some sites")
     args = ap.parse_args(argv)
     today = dt.date.today()
     export = args.export_dir or newest_export()
@@ -899,6 +903,8 @@ def main(argv=None):
         if k in replaced_by: c["replaced_by"] = replaced_by[k]
         if k in by_org_key: c.update(by_org_key[k])
         if k in tm_extra: c.update(tm_extra[k])
+    if args.matched_only:
+        checks = [c for c in checks if c["status"] not in ("unchecked", "not_on_organizer_site", "superseded") and not c.get("retire")]
     in_app = {json.loads(l).get("dedupe_key") for l in open(export / "event_candidates.jsonl")}
     ready = [c for c in checks if c["app_dedupe_key"] in in_app]
     held = len(checks) - len(ready)

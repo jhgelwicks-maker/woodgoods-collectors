@@ -1,0 +1,69 @@
+name: found-sites-crawl
+
+# One-time crawl of the lacrosse organizer websites found by web search (collectors/organizers/lacrosse_websites.json).
+# Started by hand only (Actions -> found-sites-crawl -> Run workflow); it never runs on a schedule.
+# Each shard reads its organizers' sites (name, dates, venue, town, state, boys/girls/coed, ages, vendor contact), checks
+# every event against the app with the weekly badge matcher, and sends only events that match an app row plus new ones
+# that are plainly tournaments (crawl.select_for_send; the rest is listed in the log as "held back"). Then the badges:
+# an event the app predicted from last year gets its badge and the predicted copy is hidden behind the organizer's row. Nothing is uploaded as an artifact: the rows hold contacts and this repo is public.
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        # one job sees every site, so an event two organizers both list is sent once (~1 hour for the 83 sites)
+        description: "Parallel jobs (1 = all sites in one job, which also removes events listed by two organizers)"
+        default: "1"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.p.outputs.shards }}
+    steps:
+      - id: p
+        run: |
+          n=${{ github.event.inputs.shards || 1 }}
+          echo "shards=$(python3 -c "import json; print(json.dumps([f'{i}/$n' for i in range(1, $n + 1)]))")" >> "$GITHUB_OUTPUT"
+
+  crawl:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 360          # the most GitHub allows for one job
+    strategy:
+      fail-fast: false            # one shard failing never stops the others
+      matrix:
+        shard: ${{ fromJson(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install (with a headless browser for JavaScript-built pages)
+        run: |
+          pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+      - name: Pull the app's events, history and venues
+        env:
+          EXPORT_KEY: ${{ secrets.EXPORT_KEY }}
+        run: python tools/backup_db.py --tables event_candidates event_history venues --out export
+      - name: Crawl shard ${{ matrix.shard }} (nothing sent yet)
+        # --stop-after 320: no new site is started after 5h20m, so the steps below always finish inside the 6-hour limit
+        run: >
+          python -m collectors.organizers.crawl --seed-only --shard ${{ matrix.shard }} --all-vendors
+          --max-pages 60 --max-details 40 --stop-after 320 --no-match --export-dir export --out out
+      - name: Check the crawled events against the app (dry run)
+        run: python tools/lacrosse_match_report.py --export-dir export --scraped out/events.jsonl --out out/pre.csv --matched-only
+      - name: Send events that match the app, and new ones that are plainly tournaments
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_KEY: ${{ secrets.INGEST_KEY }}
+        run: python -m collectors.organizers.crawl --send-file out/events.jsonl --match-csv out/pre.csv --out out --send
+      - name: Pull the app's events again (now with the rows just sent)
+        env:
+          EXPORT_KEY: ${{ secrets.EXPORT_KEY }}
+        run: python tools/backup_db.py --tables event_candidates --out export
+      - name: Badges for the sent events and the app rows they match
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_KEY: ${{ secrets.INGEST_KEY }}
+        run: python tools/lacrosse_match_report.py --export-dir export --scraped out/sent.jsonl --out out/match.csv --matched-only --send

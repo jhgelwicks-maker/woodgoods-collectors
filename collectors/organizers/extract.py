@@ -75,7 +75,11 @@ def find_dates(text, today=None):
                 s, e = common.parse_date_range(raw, default_year=today.year + 1)
         except (KeyError, ValueError, IndexError):            # one unreadable date never stops a crawl
             continue
-        if s: out.append((s, e or s))
+        if s: out.append((s, e or s, has_year))
+    # a card's short date ('Dec 14') next to its full one ('Sunday, December 14, 2025') takes the full one's year: rolled
+    # forward on its own, last year's event became next month's
+    dated = {(s.month, s.day): (s, e) for s, e, y in out if y}
+    out = [dated.get((s.month, s.day), (s, e)) if not y else (s, e) for s, e, y in out]
     if not out:
         for m in NUM_DATE.finditer(t):
             mo, d1, y1, mo2, d2, y2 = m.groups()
@@ -107,15 +111,22 @@ def _city_only(words):
     """'1100 Cedar Ln Bel Air' -> 'Bel Air', 'Dates Arlington' -> 'Arlington': keep what follows the last street word,
     drop web-ish tokens and leading label words."""
     w = re.split(r"\s+", words.strip())
+    # menu words in capitals before the town ('SOLUTIONS CAMPS CONTACT Philadelphia'), a compass word ('NE Naples')
+    if any(not x.isupper() for x in w):
+        while len(w) > 1 and (w[0].isupper() and len(w[0]) > 1 and not w[0].rstrip(".").upper() in ("ST", "MT", "FT")):
+            w = w[1:]
     while w and LABEL_WORDS.match(w[0].strip(":")): w = w[1:]
     # a street word ends the street part, except "St."/"Mt."/"Ft." opening the city name ("St. George", "Mt. Airy"),
     # also right after a facility ("Eastern University St. Davids")
     last = max((i for i, x in enumerate(w) if STREET_WORD.fullmatch(x)
                 and not ((i == 0 or FACILITY_WORD.fullmatch(w[i - 1])) and i < len(w) - 1 and re.fullmatch(r"(?i)(st|mt|ft)\.?", x))),
                default=-1)
+    # 'Complex. Naples': a word ending a sentence is not part of the town
+    dot = max((i for i, x in enumerate(w) if i > last and x.endswith(".") and not re.fullmatch(r"(?i)(st|ste|ft|mt|pt)\.", x)), default=-1)
+    last = max(last, dot) if dot < len(w) - 1 else last
     w = [x for x in w[last + 1:] if ("." not in x.rstrip(".") or re.fullmatch(r"(?i)(st|ste|ft|mt|pt)\.", x))
          and not any(ch.isdigit() for ch in x)]
-    fac = max((i for i, x in enumerate(w) if FACILITY_WORD.fullmatch(x)), default=-1)
+    fac = max((i for i, x in enumerate(w) if FACILITY_WORD.fullmatch(x.rstrip(".,")) or x.lower() == "world"), default=-1)
     if 0 <= fac < len(w) - 1: w = w[fac + 1:]          # 'Bryant University Providence' -> 'Providence' ('College Park' stays)
     return " ".join(w)
 

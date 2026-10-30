@@ -40,7 +40,17 @@ VENDOR_HINT = re.compile(r"\b(vendors?|vending|sponsors?|sponsorship|exhibitors?
 SKIP_LINK = re.compile(r"(facebook|instagram|twitter|x\.com|tiktok|youtube|linkedin|maps\.google|goo\.gl|apple\.com|mailto:|tel:|\.pdf$|\.jpe?g$|\.png$|"
                        r"/cart|/login|/account|/wp-admin|/privacy|/terms|/shop|/store|/product|/feed|#)", re.I)
 PLATFORM = re.compile(r"(tourneymachine|leagueapps|sportsengine|sportngin|exposureevents|gotsport|playbook365|eventbrite|teamsnap|laxnumbers)\.", re.I)
-NOT_EVENT = re.compile(r"\b(camps?|clinics?|training|tryouts?|lessons?|private|academy\s+program|membership|newsletter|blog|news|recap|results?|standings)\b", re.I)
+NOT_EVENT = re.compile(r"\b(camps?|clinics?|training|tryouts?|lessons?|private|academy\s+program|membership|newsletter|blog|news|recap|results?|standings|"
+                       r"prospect\s+days?|id\s+days?|recruiting)\b", re.I)
+# pages that list other people's events or no events at all: a club's college-camp calendar (yjnorthlacrosse.com
+# /recruiting-events listed 100+ college camps), news posts, tryouts
+NOT_EVENT_PAGE = re.compile(r"/(news|blog|posts?|recruit\w*|college\w*|camps?|clinics?|tryouts?|press|media|articles?|popups?)(?:[-/]|$)", re.I)
+# a club's or organizer's site lists practices, fundraisers and camps beside its tournaments: an event must say what it is
+TOURNAMENT_WORD = re.compile(r"\b(tournaments?|tourney|classic|cup|showcase|invitational|shoot-?out|fest\w*|challenge|championships?|bash|"
+                             r"series|jamboree|brawl|sixes|6v6|7v7|box|games|throw-?down|battle|duel|clash|rumble|blast|frenzy|madness|"
+                             r"havoc|bowl|open|slam|summit|qualifier|playoffs?|league|divisions?|teams?|bracket|pool play|prix|tour|futures|lax)\b", re.I)
+# events of another sport on a lacrosse organizer's site ('BCA Elite Lacrosse & Soccer'); lacrosse events never say these
+OTHER_SPORT = re.compile(r"\b(soccer|futsal|basketball|baseball|softball|volleyball|hockey|football|pickleball|wrestling|track meet|cross country)\b", re.I)
 MORE_LINK = re.compile(r"^(register|registration|more info|learn more|find (?:out|our) more|see (?:more|details)|event details|details|view|info|"
                        r"read more|click here|sign up|apply|buy tickets|get tickets|book now|join|enroll)\b", re.I)
 
@@ -55,7 +65,9 @@ def tidy_caps(s):
 JUNK_NAME = re.compile(r"(:\s*$)|^(location|locations|dates?|when|where|venue|address|schedule|times?|cost|price|fees?|faq|contact|"
                        r"(attending\s+)?college\s+coaches(\s+attending)?|coaches|sponsors?|directions|parking|hotels?|lodging)\b"
                        # deadlines listed on an event page ("Balances Due", "Submit schedule requests by", "Player Waivers Complete")
-                       r"|\b(due|deadline)\b|^submit\b|\bwaivers?\s+(complete|due)|\bregistration\s+(opens|closes)|\brequests?\s+by\b", re.I)
+                       r"|\b(due|deadline)\b|^submit\b|\bwaivers?\s+(complete|due)|\bregistration\s+(opens|closes)|\brequests?\s+by\b"
+                       # a share button or file name taken for a name ('Sharer.Php'), a tagline ('Dynamic | Fast-paced | High-rep')
+                       r"|\.(php|html?|aspx?|jsp)\b|\bsharer\b|\|.*\|", re.I)
 
 
 # a page heading, not an event, when it is the whole name ("Events", "Upcoming Events"); "Tournament of Champions" stays
@@ -67,7 +79,180 @@ def clean_name(name):
     n = X.DATE_TEXT.sub(" ", tidy_caps(X.clean(name)) or "")
     n = re.sub(r"\b(?:19|20)\d\d\b\s*$", " ", n)
     n = re.sub(r"^\s*(?:19|20)\d\d\s+", "", n)        # "2026 Boys Fall Grand Prix" -> "Boys Fall Grand Prix", as the scrapers do
+    n = re.sub(r"\s*[(\[]\s*$", "", n)                 # "Laxgiving Shootout (" : the date inside the brackets was cut off
+    n = re.sub(r"\s+(?:information|info)$", "", n.strip(), flags=re.I)   # "Hackfest 2026 Information"
+    n = re.sub(r"^tournament\s+(?=\S+\s+\S)", "", n, flags=re.I)        # "Tournament Witches Brew Lax Fest" (a label before the name)
+    n = re.sub(r"(?<![A-Z])\.$", "", n.strip())          # "Lehigh Laxfest." (not "Inc." handling: 'St.' never ends a name)
+    if n[:1].islower() and re.search(r"\b[A-Z]{4,}\b", n):   # "northeast regional CHAMPIONSHIP"
+        n = " ".join(w.capitalize() for w in n.lower().split())
+    elif re.search(r"\b[a-z]{4,}\b", n) and re.search(r"\b[A-Z]{5,}\b", n):   # "Six Nations regional CHAMPIONSHIP"
+        n = " ".join(w.capitalize() if (w.isupper() and len(w) >= 5) or (w.islower() and len(w) >= 4) else w for w in n.split())
+    n = re.sub(r"^(?:bring your team to|join us (?:for|at)|register for|welcome to)\s+", "", n, flags=re.I)
+    n = re.sub(r"\s+(?:WHEN|WHERE|DATES?|LOCATION|TIME)$", "", n)        # a label run into the name
     return re.sub(r"\s+", " ", n).strip(" -–—|:,·") or X.clean(name)
+
+
+GENERIC_WORDS = {"lacrosse", "lax", "events", "event", "tournaments", "tournament", "the", "and", "of", "inc", "llc", "club", "series", "league"}
+FACILITY_NAME = re.compile(r"\b(arena|complex|park|fields?|center|centre|\w*plex|stadium|dome|school|college|university|academy|turf|facility)\s*$", re.I)
+LEVEL = re.compile(r"\b(youth|high\s*school|h\.?s\.?|varsity|jv|middle\s*school|college|adult|masters)\b", re.I)
+GENDER_WORD = re.compile(r"\b(boys?|girls?|men'?s|women'?s)\b", re.I)
+DIVISION_LINE = re.compile(r"\b(\d(?:st|nd|rd|th)\s*(?:/\s*\d(?:st|nd|rd|th))*\s*grade|grades?\b|division|varsity|pre-?k|kindergarten|u\d{1,2}\b|"
+                           r"games\s+as\s+early|(?:19|20)\d\d\s*(?:/|&|-)\s*(?:19|20)?\d\d\b)", re.I)
+
+
+def _words(name):
+    return {w for w in re.findall(r"[a-z0-9]+", (name or "").lower()) if w not in GENERIC_WORDS and not re.fullmatch(r"(?:19|20)\d\d", w)}
+
+
+SEASON_TYPE = {"fall", "spring", "summer", "winter", "autumn", "annual", "invitational", "championship", "championships", "classic", "cup",
+               "showcase", "open", "boys", "girls", "youth", "session", "regional", "national", "box", "sixes"}
+
+
+def _org_words(org_name):
+    """The organizer's words plus its initials ('Pinnacle Lacrosse Championships' -> ..., 'plc')."""
+    caps = re.findall(r"[A-Za-z]+", org_name or "")
+    return _words(org_name) | ({"".join(w[0] for w in caps).lower()} if len(caps) > 1 else set())
+
+
+def strip_org(name, org_name):
+    """'Deep Creek Lacrosse Tournament — Maryland Lacrosse League' -> 'Deep Creek Lacrosse Tournament': a page title's
+    site-name part. None when the whole name is just the organizer ('101 Lacrosse Events' on the Gold Rush page)."""
+    org = _words(org_name)
+    parts = [x for x in re.split(r"\s+[|–—]\s+|\s+-\s+", name or "") if x.strip()]
+    keep = [x for x in parts if not (_words(x) and _words(x) <= org | {"inc"})]
+    if not keep: return None
+    return " – ".join(keep) if len(keep) < len(parts) else name
+
+
+def name_from_url(url):
+    """'.../tournaments/gold-rush/' -> 'Gold Rush'."""
+    seg = [x for x in urllib.parse.urlparse(url or "").path.split("/") if x]
+    s = re.sub(r"\.\w{2,4}$", "", seg[-1]) if seg else ""
+    s = re.sub(r"[-_]+", " ", s).strip()
+    return s.title() if re.search(r"[a-z]{3}", s, re.I) and not re.fullmatch(r"[a-z]{0,3}\d+|event details.*|events?", s, re.I) else None
+
+
+def _differ(na, nb):
+    """Youth vs high school, boys vs girls: two events even on one day at one organizer."""
+    for rx in (LEVEL, GENDER_WORD):
+        la = {re.sub(r"\W|s$", "", x.lower()) for x in rx.findall(na)}; lb = {re.sub(r"\W|s$", "", x.lower()) for x in rx.findall(nb)}
+        if la != lb: return True
+    return False
+
+
+def same_event(a, b):
+    """Two listings of one event on one organizer's site: same start (and end, when both say), and the names share a
+    word once the organizer's and generic words are set aside, with no youth/high-school or boys/girls difference
+    ('PLC Fall Championships' = 'Fall Pinnacle Lacrosse Championships'; 'Youth Fall Invitational' != 'Fall High School
+    Invitational')."""
+    if a["start"] != b["start"] or (a.get("end") and b.get("end") and abs((a["end"] - b["end"]).days) > 3): return False
+    na, nb = a["name"], b["name"]
+    for rx in (LEVEL, GENDER_WORD):
+        la = {re.sub(r"\W|s$", "", x.lower()) for x in rx.findall(na)}; lb = {re.sub(r"\W|s$", "", x.lower()) for x in rx.findall(nb)}
+        if la and lb and la != lb: return False
+    same_page = (a.get("detail") or a["page"]).rstrip("/").replace("www.", "") == (b.get("detail") or b["page"]).rstrip("/").replace("www.", "")
+    org = _org_words(a.get("org", ""))
+    wa, wb = _words(na) - org, _words(nb) - org
+    # a season or a kind of event alone ('Fall', 'Invitational') is shared by different events of one organizer
+    # or one name inside the other ('Boys Session' in 'NC LaxFest Session 2: BOYS')
+    inside = min(len(wa), len(wb)) >= 2 and (wa <= wb or wb <= wa)
+    return same_page or wa == wb or inside or bool((wa & wb) - SEASON_TYPE)
+
+
+def merge_events(events, page_name=None):
+    """One event per real event: copies of one event on one site merged (the longer name kept, missing fields filled),
+    and an event's division lines listed as separate dated items on one page ('7th/8th Grade Boys Games as early as
+    12:30pm Saturdays', '3rd Grade Boys ...') folded into one event named after that page."""
+    by_page = {}
+    for ev in events:
+        by_page.setdefault(ev["page"], []).append(ev)
+    out = []
+    for page, evs in by_page.items():
+        lines = [e for e in evs if DIVISION_LINE.search(e["name"])]
+        enough = 2 if sum(bool(re.search(r"\bdivisions?\b", e["name"], re.I)) for e in lines) >= 2 else 3   # '3/4 & 5/6 divisions: Saturday'
+        if len(lines) >= enough and (max(e["start"] for e in lines) - min(e["start"] for e in lines)).days <= 7:
+            first = min(lines, key=lambda e: e["start"])
+            # the page's address names the event ('/indoor-league-at-turf-city/'); its heading is often a slogan
+            one = {**first, "name": name_from_url(page) or (page_name(page) if page_name else None) or first["name"],
+                   "start": first["start"], "end": max(e.get("end") or e["start"] for e in lines),
+                   "text": " ".join(e.get("text") or "" for e in lines)[:3000]}
+            evs = [e for e in evs if e not in lines] + [one]
+        out += evs
+    merged = []
+    for ev in sorted(out, key=lambda e: -len(e["name"])):
+        twin = next((m for m in merged if same_event(m, ev)), None)
+        if twin is None:
+            merged.append(ev); continue
+        for k in ("detail", "venue_name", "address", "city", "state", "lat", "long", "detail_text"):
+            if ev.get(k) and not twin.get(k): twin[k] = ev[k]
+        twin["text"] = f"{twin.get('text') or ''} {ev.get('text') or ''}"[:3000]
+    return sorted(merged, key=lambda e: e["start"])
+
+
+def drop_conflicts(events):
+    """-> (kept, dropped). One organizer listing an event under two spellings with two dates ('Founders Cup' Jan 9 and
+    'Founders Cup- Box Lacrosse' Jan 30 on Fusion's site): which date is right can't be told, so neither is sent.
+    The same name on two dates is two editions and stays."""
+    bad = set()
+    for i, a in enumerate(events):
+        for b in events[i + 1:]:
+            if a["start"] == b["start"] or abs((a["start"] - b["start"]).days) > 60: continue
+            if name_key(a["name"]) == name_key(b["name"]): continue
+            org = _org_words(a.get("org", ""))
+            wa, wb = _words(a["name"]) - org, _words(b["name"]) - org
+            if min(len(wa), len(wb)) >= 2 and (wa <= wb or wb <= wa) and not re.search(r"\d", " ".join(wa ^ wb)):
+                bad |= {id(a), id(b)}
+    return [e for e in events if id(e) not in bad], [e for e in events if id(e) in bad]
+
+
+POSTAL = re.compile(r"\b\d{5}(?:-\d{4})?\b|\bP\.?\s?O\.?\s+Box\b|\bSuite\b", re.I)
+
+
+def office_contexts(home_text):
+    """{'Sparta, NJ': ['... PO Box 905 Sparta, NJ, 07871']}: towns the homepage prints in a postal line (a ZIP, PO Box or
+    suite next to it), the organizer's office. Event towns ('Naples, Florida' in a 'Next event' banner) have none."""
+    out = {}
+    for c in X.find_city_states(home_text):
+        town = c.split(",")[0]
+        for m in re.finditer(re.escape(town), home_text):
+            ctx = home_text[max(0, m.start() - 60): m.end() + 20]
+            if POSTAL.search(ctx): out.setdefault(c, []).append(ctx)
+    return out
+
+
+def drop_office_town(ev, offices):
+    """The office town off an event whose own listing doesn't name it: it came from the page footer (Ath-Ed's 'PO Box 905
+    Sparta, NJ' on the Lehigh Laxfest page). No town beats a wrong one."""
+    block = ev.get("text") or ""
+    for c in offices:
+        if c not in ev.get("city_states", []): continue
+        town = c.split(",")[0]
+        # the event names the town itself somewhere other than a postal line
+        own = any(not POSTAL.search(block[max(0, m.start() - 40): m.end() + 20]) for m in re.finditer(re.escape(town), block))
+        if not own and town not in (ev.get("address") or ""):
+            ev["city_states"] = [x for x in ev["city_states"] if x != c]
+
+
+def cross_org_duplicates(rows):
+    """-> (kept, dropped). One event listed by two organizers (the USBOXLA Northeast Regional on US Box's site and on
+    Fusion's): same start and end, no state conflict, and a distinctive word in common. The row with more details stays."""
+    def state(r):
+        cs = (r.get("city_states") or [""])[0]
+        return cs.rpartition(", ")[2] or None
+    def filled(r):
+        return sum(bool(r.get(k)) for k in ("venue_name", "city_states", "age_groups", "vendor_contact_email", "team_count")) + \
+               bool((r.get("raw") or {}).get("gender")) + bool((r.get("raw") or {}).get("contacts"))
+    dropped = set()
+    for i, a in enumerate(rows):
+        for b in rows[i + 1:]:
+            if a["source"] == b["source"] or id(a) in dropped or id(b) in dropped: continue
+            if str(a["start_date"]) != str(b["start_date"]) or str(a["end_date"]) != str(b["end_date"]): continue
+            if state(a) and state(b) and state(a) != state(b): continue
+            wa = _words(a["name"]) - _org_words(a.get("organizer_name")) - SEASON_TYPE
+            wb = _words(b["name"]) - _org_words(b.get("organizer_name")) - SEASON_TYPE
+            if wa & wb:
+                dropped.add(id(min((a, b), key=filled)))
+    return [r for r in rows if id(r) not in dropped], [r for r in rows if id(r) in dropped]
 
 
 def name_key(name):
@@ -225,7 +410,7 @@ def name_from_card(el):
         parts = [urllib.parse.unquote(p) for p in urllib.parse.urlparse(img.get("src") or "").path.split("/") if p]
         for p in reversed(parts[:-1]):                 # folders, innermost first
             if not GENERIC_PATH.match(p) and re.search(r"[A-Za-z]{3}", p): return clean_name(p.replace("_", " ").replace("-", " "))
-    a = el.find("a", href=True)
+    a = next((x for x in el.find_all("a", href=True) if not SKIP_LINK.search(x["href"]) and not re.search(r"share|\.(php|html?|aspx?)$", x["href"], re.I)), None)
     if a:
         slug = [p for p in urllib.parse.urlparse(a["href"]).path.split("/") if p]
         if slug and re.search(r"[A-Za-z]{4}", slug[-1]): return clean_name(slug[-1].replace("-", " ").replace("_", " ").title())
@@ -461,7 +646,8 @@ def crawl_organizer(org, fetch=None, today=None, ai_client=None, ai_model="claud
             if one: raw.append(one)
     seen = {}                                       # (name, start) -> event; the same event on the homepage and a listing page merges
     for ev in raw:
-        if not ev.get("start") or JUNK_NAME.search(ev.get("name") or ""): continue
+        if not ev.get("start") or JUNK_NAME.search(ev.get("name") or "") or OTHER_SPORT.search(ev.get("name") or ""): continue
+        if NOT_EVENT_PAGE.search(urllib.parse.urlparse(ev.get("page") or "").path) or NOT_EVENT.search(ev.get("name") or ""): continue
         if (ev.get("end") or ev["start"]) < today - dt.timedelta(days=1) or ev["start"] > today + dt.timedelta(days=550): continue
         key = (name_key(ev["name"]).replace(" ", ""), ev["start"])      # "Main Stage" and "Mainstage" are one event
         if key in seen:
@@ -489,8 +675,28 @@ def crawl_organizer(org, fetch=None, today=None, ai_client=None, ai_model="claud
                     title = page_title(html)
                     if title: ev["name"] = title
                 ev["page"] = detail
+    # names: the site name dropped from page titles, the organizer's own name replaced by the event page's, a venue
+    # taken for a name dropped ('Coppermine Du Burns Arena' was the venue line of the Christmas Classic card)
+    for ev in events:
+        ev["org"] = org["name"]
+        n = strip_org(ev["name"], org["name"])
+        ev["name"] = n or name_from_url(ev.get("detail") or ev["page"]) or ""
+        # a one-event site's page heading ('Home') under an organizer named for its tournament (The Reindeer Games Lacrosse Tournament)
+        if re.fullmatch(r"(?i)home|overview|about|registration|(?:event\s+)?website|schedule", ev["name"]) and NEW_NAME.search(org["name"]):
+            ev["name"] = org["name"]
+    events = [ev for ev in events if ev["name"] and not JUNK_NAME.search(ev["name"])
+              and not (FACILITY_NAME.search(ev["name"]) and not TOURNAMENT_WORD.search(ev["name"]))]
+    events = merge_events(events, lambda u: page_title(fetch.get(u)) if u else None)
+    events, unsure = drop_conflicts(events)
+    if unsure:
+        notes.append("not sent, the site gives two dates: " + "; ".join(f"{e['name']} {e['start']}" for e in unsure))
+    # its name, its own block or the top of its own page says tournament/showcase/teams... (lower down, menus name every
+    # other event); a practice, fundraiser or camp on a club's calendar does not
+    events = [ev for ev in events if TOURNAMENT_WORD.search(f"{ev.get('name')} {(ev.get('text') or '')[:600]} {(ev.get('detail_text') or '')[:2000]}")]
+    offices = office_contexts(_text(BeautifulSoup(home_html, "lxml")))
     for ev in events:
         fields_from_text(ev)
+        drop_office_town(ev, offices)
     # the organizer's own address (page footer) lands on every event: drop a city found on the homepage and on 80%+ of
     # events, unless it is an event's only city (ML8's Miami office was every event's first city)
     if len(events) >= 3:
@@ -517,26 +723,147 @@ def crawl_organizer(org, fetch=None, today=None, ai_client=None, ai_model="claud
                 vc = X.vendor_contact(BeautifulSoup(vhtml, "lxml").get_text(" "))
                 rec["vendor_contact"] = vc
                 if any(vc.values()): rec["sources"]["vendor_contact"] = found["vendor"][0]
-    elif org.get("qualifies_vendor"):
-        notes.append("no vendor/sponsor page linked from the homepage")
+    if org.get("qualifies_vendor") and not any(rec["vendor_contact"].values()):
+        # no vendor page, or one without a contact: vendor/sponsor wording on the homepage or contact page
+        # ('Vendors and sponsors: email info@...') still names the inbox
+        for u, html in contact_html:
+            vc = X.vendor_contact(BeautifulSoup(html or "", "lxml").get_text(" ")) if html else {}
+            if vc.get("email") or vc.get("phone"):
+                rec["vendor_contact"] = vc; rec["sources"]["vendor_contact"] = u
+                break
+        if not found["vendor"]:
+            notes.append("no vendor/sponsor page linked from the homepage")
     return {"organizer": rec, "events": events, "pages": fetch.pages, "notes": notes}
 
 
-def to_row(org, ev):
-    """An event in the ingest rows shape. venues[] lets the app's venue job map it to an existing facility."""
+def clean_venue(v):
+    """A venue name, or None for text that only sits where a venue would ('Finals will be 2/8 Soccer Dome')."""
+    v = re.sub(r"[^\w\s&'’.,()\-–—/#]", "", v or "").strip(" ,-–—")
+    v = re.split(r"\s+\d{3,}\s", v)[0].strip(" ,")       # 'Kirigan Cellars 11550 Watsonville Rd ...': the street goes in the address
+    if re.match(r"\d", v): return None                   # a street address, not a venue name
+    if not v or len(v) > 70 or re.search(r"\b(will|must|please|click|register|finals?|tbd|to be announced)\b|\d+/\d+", v, re.I): return None
+    return v
+
+
+GENDER = {"both": "coed"}       # the organizer scrapers' word (core.model.normalize_gender)
+
+
+def row_contacts(rec):
+    """raw.contacts in the organizer scrapers' shape (woodgoods_lacrosse.contact_updates reads it): the vendor contact
+    first, then the organizer's main inbox/phone, which is where vendors write when there is no vendor contact."""
+    if not rec: return []
+    out, vc = [], rec.get("vendor_contact") or {}
+    if vc.get("email") or vc.get("phone"):
+        out.append({"role": "vendor", "name": vc.get("name"), "email": vc.get("email"), "phone": vc.get("phone")})
+    if (rec.get("main_email") or rec.get("main_phone")) and rec.get("main_email") != vc.get("email"):
+        out.append({"role": "organizer", "name": None, "email": rec.get("main_email"), "phone": rec.get("main_phone")})
+    return out
+
+
+def to_row(org, ev, rec=None):
+    """An event in the ingest rows shape. venues[] lets the app's venue job map it to an existing facility. rec (the
+    organizer record) adds the vendor contact and the organizer's inbox."""
     city = (ev.get("city_states") or [""])[0]
+    town, _, st = city.rpartition(", ")
+    ev["venue_name"] = clean_venue(ev.get("venue_name"))
+    bare = re.sub(r"\s+(?:\w*plex|complex|center|centre|stadium|fields?)$", "", town, flags=re.I)   # 'Rockville Sportsplex, MD'
+    if bare != town and bare:
+        town, city = bare, f"{bare}, {st}"
+        ev["city_states"] = [city] + (ev.get("city_states") or [])[1:]
     venue = None
     if ev.get("venue_name") or ev.get("address"):
         venue = {"venue_name": ev.get("venue_name") or ev.get("address"), "address": ev.get("address"),
-                 "lat": ev.get("lat"), "long": ev.get("long")}
+                 "city": town or None, "state": st or None, "lat": ev.get("lat"), "long": ev.get("long")}
+    contacts = row_contacts(rec)
+    vendor = next((c for c in contacts if c["role"] == "vendor"), None)
     return {"source": f"org-{org['slug']}", "source_event_id": slugify(f"{ev['name']}-{ev['start']}-{city}"),
             "name": ev["name"], "sport": "lacrosse", "organizer_name": org["name"],
             "start_date": ev["start"], "end_date": ev.get("end") or ev["start"], "city_states": ev.get("city_states") or [],
             "venue_name": ev.get("venue_name"), "venues": [venue] if venue else None, "team_count": ev.get("team_count"),
             "age_groups": ev.get("age_groups"), "grad_year_min": ev.get("grad_year_min"), "grad_year_max": ev.get("grad_year_max"),
             "listing_url": ev.get("page"), "official_url": ev.get("page"),
-            "raw": {"gender": ev.get("gender"), "start_time": ev.get("start_time"), "end_time": ev.get("end_time"),
-                    "extracted_by": ev.get("how"), "organizer_website": org.get("website")}}
+            "vendor_contact_email": vendor and vendor["email"], "vendor_contact_name": vendor and vendor["name"],
+            "has_field_map": False,           # the app rejects new rows with has_field_map empty (2026-10-26)
+            "raw": {"gender": GENDER.get(ev.get("gender"), ev.get("gender")), "start_time": ev.get("start_time"), "end_time": ev.get("end_time"),
+                    "extracted_by": ev.get("how"), "organizer_website": org.get("website"), "address": ev.get("address"),
+                    "vendor_page": (rec or {}).get("vendor_page"), "contacts": contacts or None}}
+
+
+# a new event (one the app has nowhere) is sent only when it plainly is a tournament: its name says so, it is not a
+# program/league/page label, it lasts a weekend, and it is not another organizer's event listed on a club's page
+NEW_NAME = re.compile(r"\b(tournaments?|tourney|classic|cup|showcases?|invitational|shoot-?out|\w*fest|challenge|championships?|bash|jamboree|"
+                      r"brawl|sixes|6ixes|6'?s|7v7|throw-?down|battle|duel|clash|rumble|blast|frenzy|madness|havoc|bowl|slam|summit|qualifier|"
+                      r"mayhem|splash|games|derby|regional|face-?off|debut)\b", re.I)
+PROGRAM = re.compile(r"\b(seasons?|programs?|sessions?|skills|lab|soft\s*sticks|prep|pick-?up|practices?|training|leagues?|clinics?|camps?|"
+                     r"registration|schedules?|information|rules|guide|format|overview|about|pricing|waivers?|lodging|search|website|home|"
+                     r"tryouts?|prospect|id\s+day|recruiting|all\s+teams|contact|sell\s+out|asap|sign\s+up|register|individual)\b", re.I)
+OTHER_ORG = re.compile(r"\b(apex|mlt|nxt|primetime|prime\s*time|plc|iwlca|g365|five\s*tool|liberty|adrenaline|trilogy|victory|hogan'?s?|ml8|"
+                       r"nlf|aloha|alliance|buku|pll|legends|carpetbagger|otlax|team\s*91|usboxla|3d)\b", re.I)
+
+
+def good_new_event(r):
+    """-> None if the row may go to the app as a new event, else why not."""
+    name = r["name"]
+    try: days = (dt.date.fromisoformat(str(r["end_date"])[:10]) - dt.date.fromisoformat(str(r["start_date"])[:10])).days
+    except ValueError: days = 0
+    if days > 3: return "longer than a weekend (a league or program)"
+    if not NEW_NAME.search(name): return "name doesn't say tournament/classic/cup/showcase..."
+    if PROGRAM.search(name): return "a program, league or page label"
+    if re.search(r"[|:·]", name) or len(name.split()) > 8: return "a sentence or list, not a name"
+    if len(name.split()) < 2: return "no name, only a kind of event"         # 'Tourney'
+    # a club's site lists the tournaments its teams play in, mostly run by others (Team 91's 'Great Atlantic Lacrosse Championship')
+    if re.search(r"^team\b|\bclub\b", r.get("organizer_name") or "", re.I): return "a club's site: may be another organizer's event"
+    if sum(1 for w in name.split() if len(w) <= 2 and w.isalpha() and w.lower() not in ("of", "at", "in", "on", "la", "de", "vs", "a", "&")) >= 2:
+        return "garbled text"                                # 'Autumn G ol d Showcase'
+    return foreign(r)
+
+
+PAGE_LABEL = re.compile(r"\b(registration|schedules?|information|rules|guide|format|overview|about|pricing|waivers?|lodging|search|"
+                        r"website|home|contact|sell\s+out|asap|divisions?|all\s+teams)\b", re.I)
+
+
+def label(r):
+    """Why not, when the name is a page label or a sentence rather than an event name."""
+    if re.search(r"[|:·]", r["name"]) or len(r["name"].split()) > 8 or PAGE_LABEL.search(r["name"]): return "a page label, not an event name"
+    return None
+
+
+def foreign(r):
+    """Why not, when a club's page lists another organizer's event ('Apex Fall Championships' on Team 91's site)."""
+    name, org = r["name"], f"{r.get('organizer_name') or ''} {(r.get('raw') or {}).get('organizer_website') or ''}".lower()
+    other = [m.group(0) for m in OTHER_ORG.finditer(name) if re.sub(r"\W", "", m.group(0).lower()) not in re.sub(r"\W", "", org)]
+    if other: return f"another organizer's event ({other[0]})"
+    return None
+
+
+def select_for_send(rows, statuses):
+    """-> (send, held: [(row, why)]). statuses: {(organizer, name, start): report status} from a dry run of
+    tools/lacrosse_match_report.py. Events matching an app row go (their badges link them); a new event goes only
+    through good_new_event() and when no matched event of this crawl sits within 30 days under a shared name word
+    (US Box's 'Western Regional Championship' on Feb 5 next to Cali*Lax's confirmed 'USBOXLA Western Regional' Feb 14)."""
+    key = lambda r: (r.get("organizer_name") or "", r["name"], str(r["start_date"])[:10])
+    matched = [r for r in rows if statuses.get(key(r), "NEW") not in ("NEW", "NEW SITE")]
+    # a matched event still needs a real name: a club's copy of another organizer's event, or a page label
+    # ('Girls & Boys Divisions: U8-High School ...') that happened to land on an app row's date, is not sent
+    held = [(r, foreign(r) or label(r)) for r in matched if foreign(r) or label(r)]
+    matched = [r for r in matched if not (foreign(r) or label(r))]
+    send = list(matched)
+    dwords = lambda r: _words(r["name"]) - _org_words(r.get("organizer_name")) - SEASON_TYPE
+    for r in rows:
+        if r in matched: continue
+        why = good_new_event(r)
+        if not why:
+            wr, s0 = dwords(r), dt.date.fromisoformat(str(r["start_date"])[:10])
+            # one name's distinctive words inside the other's ('Western Regional Championship' / 'USBOXLA Western Regional'),
+            # or the same organizer on the same day (WV Red Hawks' '7 on 7 tournament' is its Hackfest)
+            near = next((m for m in matched if abs((dt.date.fromisoformat(str(m["start_date"])[:10]) - s0).days) <= 30 and (
+                         (wr and dwords(m) and (wr <= dwords(m) or dwords(m) <= wr)) or
+                         (m["source"] == r["source"] and str(m["start_date"])[:10] == str(r["start_date"])[:10]
+                          and not _differ(m["name"], r["name"])))), None)
+            if near: why = f"another listing of {near['name']} ({near['start_date']})"
+        if why: held.append((r, why))
+        else: send.append(r)
+    return send, held
 
 
 def _json_default(o):
@@ -548,6 +875,11 @@ def main(argv=None):
     ap.add_argument("--org", nargs="*", default=[], help="organizer slugs (see --list)")
     ap.add_argument("--known", action="store_true", help="the 14 organizers that have scrapers")
     ap.add_argument("--with-websites", action="store_true", help="every organizer with a known website")
+    ap.add_argument("--seed-only", action="store_true", help="only the organizers in lacrosse_websites.json (found-sites-crawl.yml)")
+    ap.add_argument("--shard", default=None, help="i/N: crawl every Nth organizer starting at the i-th (parallel jobs)")
+    ap.add_argument("--all-vendors", action="store_true", help="look for a vendor contact at every organizer, not only 20+ team ones")
+    ap.add_argument("--max-details", type=int, default=25, help="event pages read per organizer")
+    ap.add_argument("--stop-after", type=float, default=None, help="minutes: start no new organizer after this (leaves time to send)")
     ap.add_argument("--list", action="store_true", help="print the organizer list and stop")
     ap.add_argument("--export-dir", default=str(EXPORT_DIR), help="app data export (tools/backup_db.py output)")
     ap.add_argument("--out", default=None, help="output folder (default ~/WoodGoodsAI/crawl/<today>)")
@@ -556,9 +888,24 @@ def main(argv=None):
     ap.add_argument("--ai", action="store_true", help="let Claude read listing pages the rules cannot (needs ANTHROPIC_API_KEY)")
     ap.add_argument("--ai-model", default="claude-opus-5-5")
     ap.add_argument("--no-match", action="store_true", help="skip matching against the app's data")
-    ap.add_argument("--send", action="store_true", help="post NEW events (not duplicates) for organizers without a scraper")
+    ap.add_argument("--send", action="store_true", help="post the crawled events (organizers without a scraper) and their contacts")
+    ap.add_argument("--send-file", default=None, help="send rows from an earlier crawl's events.jsonl instead of crawling (with --match-csv)")
+    ap.add_argument("--match-csv", default=None, help="dry-run report of those rows: matched events go, new ones only if plainly tournaments")
     a = ap.parse_args(argv)
 
+    if a.send_file:
+        import csv
+        rows = [json.loads(l) for l in open(a.send_file)]
+        statuses = {(l["organizer"] or "", l["event"], l["start"][:10]): l["status"] for l in csv.DictReader(open(a.match_csv))} if a.match_csv else {}
+        send, held = select_for_send(rows, statuses)
+        for r, why in held:
+            log.info("held back: %s | %s %s | %s", r.get("organizer_name"), r["name"], r["start_date"], why)
+        out = pathlib.Path(a.out or pathlib.Path(a.send_file).parent); out.mkdir(parents=True, exist_ok=True)
+        (out / "sent.jsonl").write_text("".join(json.dumps(r, default=_json_default) + "\n" for r in send))
+        log.info("%d of %d events pass (%d held back)", len(send), len(rows), len(held))
+        if a.send and send:
+            _send(send)
+        return 0
     orgs = build_registry(a.export_dir)
     if a.list:
         print(f"{'slug':34} {'website':45} {'scraper':10} {'events':>6} {'max teams':>9}  vendor?  states")
@@ -568,29 +915,43 @@ def main(argv=None):
         print(f"\n{len(orgs)} organizers, {sum(1 for o in orgs if o['website'])} with a website, "
               f"{sum(1 for o in orgs if o['qualifies_vendor'])} qualify for vendor contact (>= 20 teams by precedent)")
         return 0
-    pick = [o for o in orgs if o["website"] and (o["slug"] in a.org or (a.known and o["scraper"]) or a.with_websites)]
+    pick = [o for o in orgs if o["website"] and (o["slug"] in a.org or (a.known and o["scraper"]) or a.with_websites
+                                                  or (a.seed_only and o.get("seeded") and not o["scraper"]))]
+    if a.shard:
+        i, n = (int(x) for x in a.shard.split("/"))
+        pick = sorted(pick, key=lambda o: o["slug"])[i - 1::n]
+    if a.all_vendors:
+        for o in pick: o["qualifies_vendor"] = True
     if not pick:
-        print("Nothing to crawl: pass --org <slug>, --known or --with-websites (see --list)."); return 1
+        print("Nothing to crawl: pass --org <slug>, --known, --seed-only or --with-websites (see --list)."); return 1
 
     client = None
     if a.ai:
         from ..anthropic_client import make_client
         client = make_client()
     out = pathlib.Path(a.out or OUT_ROOT / dt.date.today().isoformat()); out.mkdir(parents=True, exist_ok=True)
-    rows, records = [], []
-    for o in pick:
+    rows, records, started = [], [], time.time()
+    for k, o in enumerate(pick, 1):
+        if a.stop_after and time.time() - started > a.stop_after * 60:
+            log.warning("time is up after %d of %d organizers; not crawled: %s", k - 1, len(pick), ", ".join(x["slug"] for x in pick[k - 1:]))
+            break
         t0 = time.time()
         fetch = Fetcher(max_pages=a.max_pages, render=not a.no_render)
         try:
-            res = crawl_organizer(o, fetch=fetch, ai_client=client, ai_model=a.ai_model)
+            res = crawl_organizer(o, fetch=fetch, ai_client=client, ai_model=a.ai_model, max_details=a.max_details)
+        except Exception as e:  # noqa: BLE001  one broken site must not end the run
+            log.warning("[%d/%d] %s failed: %s", k, len(pick), o["slug"], e); continue
         finally:
             fetch.close()
-        orow = [to_row(o, e) for e in res["events"]]
+        orow = [to_row(o, e, res["organizer"]) for e in res["events"]]
         rows += orow; records.append(res["organizer"])
         r = res["organizer"]
-        log.info("%-12s %3d events, %2d pages, %4.0fs | email %s, phone %s, vendor page %s, vendor contact %s%s", o["slug"], len(orow), res["pages"],
+        log.info("[%d/%d] %-12s %3d events, %2d pages, %4.0fs | email %s, phone %s, vendor page %s, vendor contact %s%s", k, len(pick), o["slug"], len(orow), res["pages"],
                  time.time() - t0, "yes" if r["main_email"] else "no", "yes" if r["main_phone"] else "no", "yes" if r["vendor_page"] else "no",
                  "yes" if any(r["vendor_contact"].values()) else "no", f" | {'; '.join(res['notes'])}" if res["notes"] else "")
+    rows, twins = cross_org_duplicates(rows)
+    for r in twins:
+        log.info("same event on another organizer's site, not sent twice: %s (%s) %s", r["name"], r["source"], r["start_date"])
     (out / "events.jsonl").write_text("".join(json.dumps(r, default=_json_default) + "\n" for r in rows))
     (out / "organizers.jsonl").write_text("".join(json.dumps(r, default=_json_default) + "\n" for r in records))
     log.info("wrote %d events and %d organizer records to %s (organizer records hold contacts: keep them out of the repo)", len(rows), len(records), out)
@@ -603,17 +964,25 @@ def main(argv=None):
         log.info("matching: %s", summary)
 
     if a.send:
-        from ..common import Supabase
-        scraped = {o["slug"] for o in pick if o["scraper"]}
-        dup = {m["dedupe_key"] for m in matches if m.get("duplicate_of")}
-        new = [r for r in rows if r["source"].removeprefix("org-") not in scraped and f"{r['source']}:{r['source_event_id']}" not in dup]
-        if new:
-            n = Supabase().upsert_candidates(new)
-            log.info("sent %d new events (%d skipped as duplicates or covered by a scraper); organizer records and confirmations "
-                     "wait for the app's organizers/confirmations payloads", n, len(rows) - len(new))
-        else:
-            log.info("nothing new to send")
+        _send([r for r in rows if r["source"].removeprefix("org-") not in {o["slug"] for o in pick if o["scraper"]}])
     return 0
+
+
+def _send(rows):
+    """Post rows, then the vendor contact + organizer inbox of each as the app's contacts payload."""
+    from ..common import Supabase
+    from ..woodgoods_lacrosse import contact_updates
+    if not rows:
+        log.info("nothing to send"); return
+    db = Supabase()
+    log.info("sent %d events", db.upsert_candidates(rows))
+    cs = contact_updates(rows)
+    try:
+        for i in range(0, len(cs), 200):
+            db._post({"contacts": cs[i:i + 200]})
+        log.info("sent %d contacts", len(cs))
+    except Exception as e:  # noqa: BLE001
+        log.warning("contacts step failed (events are already saved): %s", e)
 
 
 if __name__ == "__main__":

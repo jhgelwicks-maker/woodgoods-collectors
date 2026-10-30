@@ -1,4 +1,421 @@
 {
-  "_about": "Public websites of lacrosse organizers without a dedicated scraper, keyed by the organizer name as Tourney Machine shows it. Add one per line as they are found (by hand or from Find Organizer). Names and websites only: never emails, phones or other contacts (this repo is public).",
-  "_example": "Big Dog Lacrosse: https://www.example.org/"
+  "_about": "Public websites of lacrosse organizers without a dedicated scraper, keyed by organizer name: a homepage, or {\"website\": homepage, \"pages\": [event pages to read first]} (pages where a web search found one of their events). Add them as they are found (by hand, Find Organizer or tools/web_confirm.py). Names and public web addresses only: never emails, phones or other contacts (this repo is public). found-sites-crawl.yml crawls every site here once.",
+  "_example": "Big Dog Lacrosse: https://www.example.org/",
+  "101 Lacrosse": {
+    "website": "https://101lax.com/",
+    "pages": [
+      "https://101lax.com/programs/tournaments/gold-rush/"
+    ]
+  },
+  "3d Lacrosse Georgia": {
+    "website": "https://georgia.3dlacrosse.com/",
+    "pages": [
+      "https://georgia.3dlacrosse.com/page/box-tournament"
+    ]
+  },
+  "ACES Lacrosse": {
+    "website": "https://aceslacrosse.com/",
+    "pages": [
+      "https://aceslacrosse.com/pages/sacramento-fall-league"
+    ]
+  },
+  "Achieve Lax": {
+    "website": "https://achievelax.com/",
+    "pages": [
+      "https://www.achievelax.com/tournaments/beantown-battle/",
+      "https://www.achievelax.com/tournaments/wintersixes-copy/"
+    ]
+  },
+  "ADVNC Lacrosse": {
+    "website": "https://advnclacrosse.com/",
+    "pages": [
+      "https://www.advnclacrosse.com/east-bay"
+    ]
+  },
+  "Amity Youth Lacrosse": "https://amityyouthlacrosse.org/",
+  "Ath-Ed Lacrosse Events": "https://ath-edlacrosseevents.com/",
+  "Battle In The Ville": "https://battleintheville.com/",
+  "BCA Elite Lacrosse & Soccer": {
+    "website": "https://bcaelite.com/",
+    "pages": [
+      "https://bcaelite.com/holiday-havoc-sixes"
+    ]
+  },
+  "Blue Star Lacrosse": {
+    "website": "https://bluestarlacrosse.com/",
+    "pages": [
+      "https://www.bluestarlacrosse.com/page/show/6707256-blue-hen-fall-classic"
+    ]
+  },
+  "Cali*Lax ALL-STARS": {
+    "website": "https://calilax.usboxla.com/",
+    "pages": [
+      "https://calilax.usboxla.com/page/show/6644223-usboxla-western-regional"
+    ]
+  },
+  "Capital Lacrosse": {
+    "website": "https://capitallacrosse.com/",
+    "pages": [
+      "http://www.capitallacrosse.com/colonialchallenge.html"
+    ]
+  },
+  "CEM Events (NC LaxFest)": {
+    "website": "https://cemevents.com/",
+    "pages": [
+      "https://www.cemevents.com/nc-laxfest-boys.html"
+    ]
+  },
+  "Cityside Lacrosse": {
+    "website": "https://citysidelax.com/",
+    "pages": [
+      "https://www.citysidelax.com/citysidelax-tournaments/2026-emerald-city-cup",
+      "https://www.citysidelax.com/citysidelax-tournaments/2026-jet-city-classic"
+    ]
+  },
+  "CNS Candy Cane Classic": "https://cnscandycaneclassic.com/",
+  "Coppermine": "https://gocoppermine.com/",
+  "Crease Lacrosse": {
+    "website": "https://creaselacrossemd.com/",
+    "pages": [
+      "https://creaselacrossemd.com/program-info-hs-indoor/"
+    ]
+  },
+  "DFW Youth Lacrosse": "https://dfwlacrosse.com/",
+  "Elite Six Challenge": {
+    "website": "https://elitesixchallenge.com/",
+    "pages": [
+      "https://elitesixchallenge.com/popups"
+    ]
+  },
+  "Elite Tournaments": {
+    "website": "https://elitetournys.com/",
+    "pages": [
+      "https://elitetournys.com/tournaments/2024-southside-holiday-classic/",
+      "https://elitetournys.com/tournaments/music-city-mayhem/"
+    ]
+  },
+  "Emerald Coast Lightning Lacrosse": {
+    "website": "https://eclightninglacrosse.com/",
+    "pages": [
+      "https://www.eclightninglacrosse.com/2026-fall-surf-n-turf-7v7-tournament/"
+    ]
+  },
+  "Florida Lax Classic": "https://floridalaxclassic.com/",
+  "Florida Lax Classics": {
+    "website": "https://floridalaxclassics.com/",
+    "pages": [
+      "https://www.floridalaxclassics.com/autumnclassic"
+    ]
+  },
+  "Fusion Events": {
+    "website": "https://fusionlaxevents.com/",
+    "pages": [
+      "https://www.fusionlaxevents.com/event-details-1/best-in-box",
+      "https://www.fusionlaxevents.com/event-details-1/founders-cup"
+    ]
+  },
+  "Garden State Sixes": {
+    "website": "https://gardenstatesixes.com/",
+    "pages": [
+      "https://gardenstatesixes.com/gobble-games"
+    ]
+  },
+  "Georgia Swarm": {
+    "website": "https://georgiaswarm.com/",
+    "pages": [
+      "https://www.georgiaswarm.com/sbl/"
+    ]
+  },
+  "Gold Standard Lacrosse": {
+    "website": "https://goldstandardlacrosse.com/",
+    "pages": [
+      "https://www.goldstandardlacrosse.com/landing-page-2"
+    ]
+  },
+  "Henry Youth Lacrosse": {
+    "website": "https://henryyouthlax.org/",
+    "pages": [
+      "https://www.henryyouthlax.org/programs/"
+    ]
+  },
+  "House of Sports NY": {
+    "website": "https://houseofsportsny.com/",
+    "pages": [
+      "https://www.houseofsportsny.com/page/show/6007085-boys-lax-winter-league-2026-2027-"
+    ]
+  },
+  "Invictus Lacrosse Club": {
+    "website": "https://invictuslacrosse.com/",
+    "pages": [
+      "https://www.invictuslacrosse.com/leagues/sacramento-sixes/18025"
+    ]
+  },
+  "Iron Maidens Girls Lacrosse": {
+    "website": "https://cyfairironmaidenslacrosse.org/",
+    "pages": [
+      "https://cyfairironmaidenslacrosse.org/burning-flower-lacrosse-tournament/"
+    ]
+  },
+  "IWLCA Recruiting Series": {
+    "website": "https://iwlcarecruiting.com/",
+    "pages": [
+      "https://iwlcarecruiting.com/tournaments/iwlca-debut/",
+      "https://iwlcarecruiting.com/tournaments/iwlca-leaders-cup/"
+    ]
+  },
+  "Lacrosse Eventures": {
+    "website": "https://lacrosseeventures.com/",
+    "pages": [
+      "https://lacrosseeventures.com/event-1-copy/"
+    ]
+  },
+  "Lacrosse World Series Championship": {
+    "website": "https://lacrosseworldserieschampionship.com/",
+    "pages": [
+      "https://lacrosseworldserieschampionship.com/south-qualifier/"
+    ]
+  },
+  "Lax OC Events": {
+    "website": "https://laxocevents.com/",
+    "pages": [
+      "https://www.laxocevents.com/airstation-shootout",
+      "https://www.laxocevents.com/war-on-the-shore"
+    ]
+  },
+  "Laxachusetts Girls Lacrosse": {
+    "website": "https://girls.laxachusetts.com/",
+    "pages": [
+      "https://girls.laxachusetts.com/bostonstrong1"
+    ]
+  },
+  "LaxNOVA Events": "https://laxnova.com/",
+  "Logan Janik Memorial Lacrosse Tournament": "https://loganjanik.com/",
+  "Lowlax": {
+    "website": "https://lowlaxlacrosse.com/",
+    "pages": [
+      "https://lowlaxlacrosse.com/savannah-fall-fest"
+    ]
+  },
+  "LP Swag": {
+    "website": "https://lpswag.com/",
+    "pages": [
+      "https://lpswag.com/tournament-info/"
+    ]
+  },
+  "MADLAX Capital": {
+    "website": "https://capital.madlax.com/",
+    "pages": [
+      "https://capital.madlax.com/northstarsteams"
+    ]
+  },
+  "Maryland lacrosse League": {
+    "website": "https://marylandlacrosseleague.com/",
+    "pages": [
+      "https://www.marylandlacrosseleague.com/laxgiving",
+      "https://www.marylandlacrosseleague.com/halloween-havoc",
+      "https://www.marylandlacrosseleague.com/christmas-classic"
+    ]
+  },
+  "Mass Youth Lax": {
+    "website": "https://massyouthlax.org/",
+    "pages": [
+      "https://www.massyouthlax.org/beverly-bash-sixes-tournament"
+    ]
+  },
+  "Midwest Lax Events": {
+    "website": "https://midwestlaxevents.com/",
+    "pages": [
+      "https://www.midwestlaxevents.com/loucityfallinvitational"
+    ]
+  },
+  "Monkey Up Tournaments": {
+    "website": "https://monkeyuptournaments.com/",
+    "pages": [
+      "https://monkeyuptournaments.com/tournaments/gobble-gobble-games/",
+      "https://monkeyuptournaments.com/tournaments/harvest-classic/"
+    ]
+  },
+  "Nashville Uproar": {
+    "website": "https://nashuproar.org/",
+    "pages": [
+      "https://nashuproar.org/31449/sports/late-night-lacrosse-anyone/"
+    ]
+  },
+  "Navy Rivalry Challenge": {
+    "website": "https://navyrivalrychallenge.com/",
+    "pages": [
+      "https://www.navyrivalrychallenge.com/teams"
+    ]
+  },
+  "North American Lacrosse": {
+    "website": "https://nalacrosse.com/",
+    "pages": [
+      "https://nalacrosse.com/event/fall-high-school-invitational/",
+      "https://nalacrosse.com/event/youth-fall-invitational/"
+    ]
+  },
+  "Northwest Lacrosse Events": {
+    "website": "https://northwestlacrosseevents.com/",
+    "pages": [
+      "https://www.northwestlacrosseevents.com/oregon-fall-classic"
+    ]
+  },
+  "Oakland Lacrosse Club": {
+    "website": "https://oaklandlacrosse.org/",
+    "pages": [
+      "http://oaklandlacrosse.org/olc-jamboree"
+    ]
+  },
+  "Orange Crush Lacrosse": {
+    "website": "https://orangecrushlax.com/",
+    "pages": [
+      "https://www.orangecrushlax.com/page/show/7528584-northeast-showcase-ny-"
+    ]
+  },
+  "Orlando Lax Open": "https://orlandolaxopen.com/",
+  "PA Roar Lacrosse": {
+    "website": "https://roarlacrosse.com/",
+    "pages": [
+      "https://www.roarlacrosse.com/page/show/8838324-roar-lacrosse-play-days-and-tournaments"
+    ]
+  },
+  "Pinnacle Lacrosse Championships": {
+    "website": "https://pinnaclelacrossechampionships.com/",
+    "pages": [
+      "https://pinnaclelacrossechampionships.com/plc-fall-championships/"
+    ]
+  },
+  "Prep Lacrosse": {
+    "website": "https://preplacrosse.com/",
+    "pages": [
+      "https://preplacrosse.com/2025/11/big-red-fall-classic-standout-players/"
+    ]
+  },
+  "PT Lacrosse Club": {
+    "website": "https://ptlacrosseclub.com/",
+    "pages": [
+      "https://www.ptlacrosseclub.com/team/116053/games"
+    ]
+  },
+  "RILL- RI's #1 Lacrosse League": {
+    "website": "https://rhodeislandlacrosseleague.com/",
+    "pages": [
+      "https://rhodeislandlacrosseleague.com/schedule"
+    ]
+  },
+  "Roots Box Lacrosse": {
+    "website": "https://rootsboxlacrosse.com/",
+    "pages": [
+      "https://www.rootsboxlacrosse.com/roch-vegas-showdown",
+      "https://www.rootsboxlacrosse.com/roots-youth-box-lacrosse-league"
+    ]
+  },
+  "Sand Storm Lacrosse Festival": "https://sandstormlacrosse.com/",
+  "SC Youth Lacrosse": "https://southcarolinayouthlacrosse.org/",
+  "Southern Edge Lacrosse": {
+    "website": "https://southernedgelacrosse.com/",
+    "pages": [
+      "https://www.southernedgelacrosse.com/fall-tournaments"
+    ]
+  },
+  "Sunshine Events Group": {
+    "website": "https://sunshineeventsgroup.com/",
+    "pages": [
+      "https://sunshineeventsgroup.com/tournaments/cmq4t90bx0000r4hfrxclirox/event",
+      "https://sunshineeventsgroup.com/tournaments/cmqjrwppx0000krs8lu1f8xue/event",
+      "https://sunshineeventsgroup.com/tournaments/cmqjrmdum0000f7po8pf4rgxo/event"
+    ]
+  },
+  "Super G Lacrosse": {
+    "website": "https://superglacrosse.com/",
+    "pages": [
+      "https://www.superglacrosse.com/monarchs/highschoolscc"
+    ]
+  },
+  "Team 91 Charlotte": {
+    "website": "https://charlotte.team91lacrosse.com/",
+    "pages": [
+      "https://charlotte.team91lacrosse.com/2025-charlotte-fall-events/"
+    ]
+  },
+  "Team 91 New Jersey": {
+    "website": "https://newjersey.team91lacrosse.com/",
+    "pages": [
+      "https://newjersey.team91lacrosse.com/new-jersey/south/south-upcoming-events/mlt-fall-lacrosse-classic/"
+    ]
+  },
+  "Team NorCal Lacrosse": "https://teamnorcal.com/",
+  "Team Oregon Lacrosse": "https://teamoregonlacrosse.com/",
+  "Terps Lax": "https://terpslax.com/",
+  "The Reindeer Games Lacrosse Tournament": "https://playthereindeergames.com/",
+  "Tony Lowe Lacrosse": {
+    "website": "https://tonylowelacrosse.com/",
+    "pages": [
+      "https://www.tonylowelacrosse.com/turkey-so"
+    ]
+  },
+  "Top Threat Tournaments": {
+    "website": "https://topthreattournaments.com/",
+    "pages": [
+      "https://www.topthreattournaments.com/event-season/fall/"
+    ]
+  },
+  "Tri-State Lacrosse": {
+    "website": "https://trilax.com/",
+    "pages": [
+      "https://trilax.com/indoor-league-at-turf-city/"
+    ]
+  },
+  "True Lacrosse": {
+    "website": "https://truelacrosse.com/",
+    "pages": [
+      "https://truelacrosse.com/fall-exposure/"
+    ]
+  },
+  "Turkey Shootout": "https://turkeyshootoutlax.com/",
+  "ULAX Lacrosse League": {
+    "website": "https://ulax.org/",
+    "pages": [
+      "https://ulax.org/newyorkcity/men/box/winter/"
+    ]
+  },
+  "Ultimate Goal Lacrosse": {
+    "website": "https://ultimategoallacrosse.com/",
+    "pages": [
+      "https://ultimategoallacrosse.com/lehigh-valley",
+      "https://ultimategoallacrosse.com/charlotte"
+    ]
+  },
+  "US Box Lacrosse Association": {
+    "website": "https://usboxla.com/",
+    "pages": [
+      "https://www.usboxla.com/sixnations"
+    ]
+  },
+  "US Box Lacrosse Championship": {
+    "website": "https://events.usboxla.com/",
+    "pages": [
+      "https://events.usboxla.com/events/northeast-regional/",
+      "https://events.usboxla.com/events/southeast-regional/"
+    ]
+  },
+  "Westchester Warriors Lacrosse Club": "https://westchesterwarriors.org/",
+  "Westside Bears Lacrosse": {
+    "website": "https://westsidebearslc.com/",
+    "pages": [
+      "https://www.westsidebearslc.com/catalax"
+    ]
+  },
+  "WV Red Hawks": {
+    "website": "https://wvredhawks.com/",
+    "pages": [
+      "https://wvredhawks.com/hackfest"
+    ]
+  },
+  "YJ North Lacrosse": {
+    "website": "https://yjnorthlacrosse.com/",
+    "pages": [
+      "https://www.yjnorthlacrosse.com/events/play-for-the-future"
+    ]
+  }
 }

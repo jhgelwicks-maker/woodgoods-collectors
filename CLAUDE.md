@@ -87,6 +87,16 @@ collectors whose required key is missing.
   on that week's organizer-site rows (artifact from the woodgoods_lacrosse step) and sends the badge records. A scrape
   missing 3+ events and >30% of an organizer's app events retires nothing as gone; records not applied are retried once.
 - `backfill.yml`: manual. Inputs start/end/shard_size. Plan job builds the matrix newest-first.
+- `found-sites-crawl.yml`: manual only, meant to run once. Crawls every organizer in `collectors/organizers/lacrosse_websites.json`
+  (82 sites found by `tools/web_confirm.py`'s Brave searches, with the event pages found there as start pages), default ONE job
+  (~1 hour; one job also catches an event two organizers list). Steps: crawl (no send) -> `lacrosse_match_report.py --matched-only`
+  dry run -> `crawl --send-file --match-csv --send` (crawl.select_for_send: events matching an app row go; a NEW event only if
+  good_new_event(): tournament name, not a program/league/page label, <=3 days, not another organizer's event on a club's page,
+  not from a "Team …"/"… Club" site, not another listing of a matched event within 30 days; held rows logged) -> re-pull
+  event_candidates -> report `--matched-only --send` on `sent.jsonl` (badges; placeholders hidden behind organizer rows; no
+  grey/not-on-site/retire records). Junk guards in the crawl: news/recruiting/camp pages, taglines, share links, venue-as-name,
+  office-address towns (postal line on every page), conflicting dates on one site, copies and division lines merged.
+  Full local dry run 2026-10-30: 164 crawled -> 77 pass (56 matched to app rows, 21 new). No artifacts (rows hold contacts).
 
 ## Mac-side setup (outside the repo, private)
 

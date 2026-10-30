@@ -331,3 +331,84 @@ def test_stale_listings_and_pages_below_a_listing_are_read_as_event_pages():
 
 def test_comma_glued_year_parses():
     assert X.find_dates("May 30 - 31,2026", dt.date(2026, 1, 1)) == [(dt.date(2026, 5, 30), dt.date(2026, 5, 31))]
+
+
+def test_found_site_names_are_cleaned():
+    assert C.clean_name("Laxgiving Shootout (") == "Laxgiving Shootout"
+    assert C.clean_name("Lehigh Laxfest.") == "Lehigh Laxfest"
+    assert C.clean_name("northeast regional CHAMPIONSHIP") == "Northeast Regional Championship"
+    assert C.JUNK_NAME.search("Sharer.Php") and C.JUNK_NAME.search("Dynamic | Fast-paced | High-rep")
+    assert C.strip_org("Deep Creek Lacrosse Tournament — Maryland Lacrosse League", "Maryland Lacrosse League") == "Deep Creek Lacrosse Tournament"
+    assert C.strip_org("101 Lacrosse Events", "101 Lacrosse") is None
+    assert C.name_from_url("https://101lax.com/programs/tournaments/gold-rush/") == "Gold Rush"
+
+
+def test_copies_and_division_lines_merge_into_one_event():
+    d = dt.date(2026, 11, 21)
+    ev = lambda name, page, start=d, **k: {"name": name, "start": start, "end": start, "page": page, "org": "Pinnacle Lacrosse Championships", **k}
+    out = C.merge_events([ev("PLC Fall Championships", "https://p.test/fall/"),
+                          ev("Fall Pinnacle Lacrosse Championships", "https://p.test/fall/", venue_name="North Collier Regional Park"),
+                          ev("Youth Fall Invitational", "https://n.test/a/"), ev("Fall High School Invitational", "https://n.test/b/")])
+    assert sorted(e["name"] for e in out) == ["Fall High School Invitational", "Fall Pinnacle Lacrosse Championships", "Youth Fall Invitational"]
+    nc = lambda name, page: {"name": name, "start": d, "end": d, "page": page, "org": "CEM Events (NC LaxFest)"}
+    assert [e["name"] for e in C.merge_events([nc("Boys Session", "https://www.cem.test/boys.html"),
+                                               nc("NC LaxFest Session 2: BOYS", "https://cem.test/nc-boys.html")])] == ["NC LaxFest Session 2: BOYS"]
+    league = "https://t.test/indoor-league-at-turf-city/"
+    lines = [ev(f"{g} Boys Games as early as 7am Saturdays", league, dt.date(2026, 12, 5)) for g in ("3rd Grade", "4th Grade", "5th/6th Grade")]
+    lines.append(ev("Varsity Boys Division Games as early as 7am Sundays", league, dt.date(2026, 12, 6)))
+    out = C.merge_events(lines)
+    assert [(e["name"], e["start"], e["end"]) for e in out] == [("Indoor League At Turf City", dt.date(2026, 12, 5), dt.date(2026, 12, 6))]
+
+
+def test_short_date_takes_the_year_of_the_full_date_beside_it():
+    assert X.find_dates("Dec 14 The Cincinnati Lacrosse Academy Sunday, December 14, 2025", dt.date(2026, 10, 29))[0][0] == dt.date(2025, 12, 14)
+
+
+def test_town_drops_menu_words_and_sentence_ends():
+    assert X.find_city_states("SOLUTIONS CAMPS CONTACT Philadelphia, PA") == ["Philadelphia, PA"]
+    assert X.find_city_states("Complex. Naples, FL") == ["Naples, FL"]
+    assert X.find_city_states("XL Sports World Hatfield, PA") == ["Hatfield, PA"]
+
+
+def test_office_town_conflicting_dates_and_cross_organizer_twins_are_not_sent():
+    home = "Upcoming: Lehigh Laxfest June 12-13th, 2027. Ath-Ed & Jersey Thunder Lacrosse PO Box 905 Sparta, NJ, 07871"
+    offices = C.office_contexts(home)
+    assert list(offices) == ["Sparta, NJ"]
+    ev = {"text": "Lehigh Laxfest. June 12-13th, 2027 ... PO Box 905 Sparta, NJ, 07871", "city_states": ["Sparta, NJ"]}
+    C.drop_office_town(ev, offices)
+    assert ev["city_states"] == []
+    assert list(C.office_contexts("NEXT EVENT Fall Championships November 21 and 22, 2026 Naples, FL Info")) == []
+
+    f = lambda name, start: {"name": name, "start": start, "org": "Fusion Events"}
+    kept, dropped = C.drop_conflicts([f("Founders Cup", dt.date(2027, 1, 9)), f("Founders Cup- Box Lacrosse", dt.date(2027, 1, 30)),
+                                      f("Frosty Five", dt.date(2026, 12, 6)), f("Frosty Five", dt.date(2027, 1, 10))])
+    assert [e["name"] for e in dropped] == ["Founders Cup", "Founders Cup- Box Lacrosse"] and len(kept) == 2
+
+    row = lambda src, org, name, **k: {"source": src, "organizer_name": org, "name": name, "start_date": "2027-01-23",
+                                       "end_date": "2027-01-24", "city_states": [], **k}
+    kept, dropped = C.cross_org_duplicates([row("org-us-box", "US Box Lacrosse Championship", "Northeast Regional Championship",
+                                                city_states=["Hatfield, PA"], age_groups="2027-2036"),
+                                            row("org-fusion", "Fusion Events", "USBOXLA- Northeast Regional"),
+                                            row("org-other", "Other", "Southeast Regional Championship")])
+    assert [r["source"] for r in dropped] == ["org-fusion"] and len(kept) == 2
+
+
+def test_only_matched_events_and_plain_tournaments_are_sent():
+    row = lambda org, name, start="2026-11-14", end=None, **k: {"source": f"org-{C.slugify(org)}", "organizer_name": org, "name": name,
+                                                                "start_date": start, "end_date": end or start, "city_states": [], **k}
+    rows = [row("Pinnacle Lacrosse Championships", "Fall Pinnacle Lacrosse Championships", "2026-11-21"),
+            row("Team 91 New Jersey", "Apex Fall Championships"),
+            row("Top Threat Tournaments", "divisions and pricing"),
+            row("True Lacrosse", "True Kalamazoo Boys Winter Skills Lab", "2027-01-13", "2027-02-25"),
+            row("Midwest Lax Events", "Spring Lacrosse Invitational", "2027-05-01"),
+            row("US Box Lacrosse Association", "Western Regional Championship", "2027-02-05"),
+            row("Cali*Lax ALL-STARS", "The USBOXLA Western Regional", "2027-02-14", raw={"organizer_website": "https://calilax.usboxla.com/"}),
+            row("North American Lacrosse", "Youth Fall Invitational"), row("North American Lacrosse", "Fall High School Invitational")]
+    statuses = {("Pinnacle Lacrosse Championships", "Fall Pinnacle Lacrosse Championships", "2026-11-21"): "CONFIRMED",
+                ("Cali*Lax ALL-STARS", "The USBOXLA Western Regional", "2027-02-14"): "CONFIRMED",
+                ("North American Lacrosse", "Youth Fall Invitational", "2026-11-14"): "REVIEW"}
+    send, held = C.select_for_send(rows, statuses)
+    assert sorted(r["name"] for r in send) == ["Fall High School Invitational", "Fall Pinnacle Lacrosse Championships",
+                                               "Spring Lacrosse Invitational", "The USBOXLA Western Regional", "Youth Fall Invitational"]
+    assert C.clean_venue("Finals will be 2/8 Soccer Dome") is None
+    assert C.clean_venue("Kirigan Cellars 11550 Watsonville Rd, Gilroy, CA") == "Kirigan Cellars"
