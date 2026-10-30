@@ -823,8 +823,8 @@ PAGE_LABEL = re.compile(r"\b(registration|schedules?|information|rules|guide|for
 
 
 def label(r):
-    """Why not, when the name is a page label or a sentence rather than an event name."""
-    if re.search(r"[|:·]", r["name"]) or len(r["name"].split()) > 8 or PAGE_LABEL.search(r["name"]): return "a page label, not an event name"
+    """Why not, when the name is a page label or a list rather than an event name ('NC LaxFest Session 2: BOYS' is a name)."""
+    if "|" in r["name"] or len(r["name"].split()) > 8 or PAGE_LABEL.search(r["name"]): return "a page label, not an event name"
     return None
 
 
@@ -834,6 +834,15 @@ def foreign(r):
     other = [m.group(0) for m in OTHER_ORG.finditer(name) if re.sub(r"\W", "", m.group(0).lower()) not in re.sub(r"\W", "", org)]
     if other: return f"another organizer's event ({other[0]})"
     return None
+
+
+def load_rows(path):
+    """Rows saved by an earlier crawl, with their dates as dates again (normalize() subtracts them)."""
+    rows = [json.loads(l) for l in open(path)]
+    for r in rows:
+        for k in ("start_date", "end_date"):
+            if isinstance(r.get(k), str) and r[k]: r[k] = dt.date.fromisoformat(r[k][:10])
+    return rows
 
 
 def select_for_send(rows, statuses):
@@ -849,8 +858,9 @@ def select_for_send(rows, statuses):
     matched = [r for r in matched if not (foreign(r) or label(r))]
     send = list(matched)
     dwords = lambda r: _words(r["name"]) - _org_words(r.get("organizer_name")) - SEASON_TYPE
+    seen = {id(r) for r, _ in held}
     for r in rows:
-        if r in matched: continue
+        if r in matched or id(r) in seen: continue
         why = good_new_event(r)
         if not why:
             wr, s0 = dwords(r), dt.date.fromisoformat(str(r["start_date"])[:10])
@@ -895,7 +905,7 @@ def main(argv=None):
 
     if a.send_file:
         import csv
-        rows = [json.loads(l) for l in open(a.send_file)]
+        rows = load_rows(a.send_file)
         statuses = {(l["organizer"] or "", l["event"], l["start"][:10]): l["status"] for l in csv.DictReader(open(a.match_csv))} if a.match_csv else {}
         send, held = select_for_send(rows, statuses)
         for r, why in held:

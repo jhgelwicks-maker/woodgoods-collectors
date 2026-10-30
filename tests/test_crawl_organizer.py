@@ -412,3 +412,16 @@ def test_only_matched_events_and_plain_tournaments_are_sent():
                                                "Spring Lacrosse Invitational", "The USBOXLA Western Regional", "Youth Fall Invitational"]
     assert C.clean_venue("Finals will be 2/8 Soccer Dome") is None
     assert C.clean_venue("Kirigan Cellars 11550 Watsonville Rd, Gilroy, CA") == "Kirigan Cellars"
+
+
+def test_saved_rows_are_read_back_with_dates_and_normalize(tmp_path):
+    from collectors import common
+    f = tmp_path / "events.jsonl"
+    f.write_text(json.dumps({"source": "org-cem", "source_event_id": "nc-laxfest", "name": "NC LaxFest Session 2: BOYS",
+                             "sport": "lacrosse", "organizer_name": "CEM Events (NC LaxFest)", "start_date": "2026-11-07",
+                             "end_date": "2026-11-08", "city_states": ["Apex, NC"]}) + "\n")
+    rows = C.load_rows(f)
+    assert rows[0]["start_date"] == dt.date(2026, 11, 7)
+    assert common.normalize(dict(rows[0]))["days"] == 2
+    send, held = C.select_for_send(rows, {("CEM Events (NC LaxFest)", "NC LaxFest Session 2: BOYS", "2026-11-07"): "REVIEW"})
+    assert [r["name"] for r in send] == ["NC LaxFest Session 2: BOYS"] and held == []
