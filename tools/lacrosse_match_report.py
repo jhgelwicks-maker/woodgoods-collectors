@@ -591,8 +591,11 @@ def event_links(scr, app, sgroups, linked, hrows):
                            new venue this year / organizer gives no venue / last year's venues unknown
       last_year_event      last year's whole edition: its records, total teams, venues not listed this year
       primary_site         the site the replaced placeholders point to (most teams there last year, else the first)
-    Returns ({site index: fields}, {replaced row key: organizer site key})."""
-    site_extra, replaced_by = {}, {}
+    A live Tourney Machine listing that agrees on date and place (and lists one venue) stays the row people see: the
+    organizer's site row gives way to it (replaced_by the TM row), and the TM row's record gets everything the organizer
+    page has (takes_over, organizer_*: link, venue, address, contacts, vendor inbox, age divisions, divisions).
+    Returns ({site index: fields}, {replaced row key: row that replaces it}, {TM row key: organizer details})."""
+    site_extra, replaced_by, tm_extra = {}, {}, {}
     for sites in sgroups.values():
         firm = [(j, st) for i in sites for j, st in linked.get(i, []) if st in FIRM]
         if not firm: continue
@@ -618,20 +621,48 @@ def event_links(scr, app, sgroups, linked, hrows):
                  "venues_not_listed_this_year": list(dict.fromkeys(unused))} if recs else None
         primary = max(sites, key=lambda i: ((here[i] or {}).get("teams") or 0, -sites.index(i)))
         key = lambda i: f"{scr[i]['source']}:{scr[i]['source_event_id']}"
-        for j in ph: replaced_by[app[j]["dedupe_key"]] = key(primary)
+        tm_over = {}                                        # organizer site -> the live Tourney Machine row it gives way to
+        for i in sites:
+            for j, st in linked.get(i, []):
+                tmv = [v for v in (app[j].get("venues") or []) if isinstance(v, dict)]
+                if st == "CONFIRMED" and app[j]["_kind"] == "tm" and len(tmv) <= 1 and j not in tm_over.values():
+                    tm_over[i] = j
+                    break
+        target = lambda i: app[tm_over[i]]["dedupe_key"] if i in tm_over else key(i)
+        for j in ph: replaced_by[app[j]["dedupe_key"]] = target(primary)
         # the sheet lists sites one per row ('Fall Classic (Boys) – Site 1' in Northborough): the site in that town, else
         # (no town, 'NJ (venue TBC)', or another town) the primary site, like the placeholders
         for j in sheet:
             town = _town_key(_city_state(app[j])[0])
             same = [i for i in sites if town and _town_key(_city_state(scr[i])[0]) == town]
-            replaced_by[app[j]["dedupe_key"]] = key(same[0] if len(same) == 1 else primary)
+            replaced_by[app[j]["dedupe_key"]] = target(same[0] if len(same) == 1 else primary)
+        for i, j in tm_over.items():
+            tkey = app[j]["dedupe_key"]
+            replaced_by[key(i)] = tkey
+            tm_extra[tkey] = {"takes_over": key(i), **organizer_details(scr[i]),
+                              "replaces": [k for k, v in replaced_by.items() if v == tkey and k != key(i)]}
         for i in sites:
             site_extra[i] = {"history_ids": last, "earlier_history_ids": earlier,
-                             "replaces": [app[j]["dedupe_key"] for j in ph + sheet],
+                             "replaces": [] if i in tm_over else [app[j]["dedupe_key"] for j in ph + sheet],
                              "same_event_keys": [app[j]["dedupe_key"] for j in others],
                              "last_year_venue": here[i], "last_year_venue_status": venue_status(scr[i], here[i], recs),
                              "last_year_event": event, "primary_site": i == primary}
-    return site_extra, replaced_by
+    return site_extra, replaced_by, tm_extra
+
+
+def organizer_details(r):
+    """Everything the organizer's page gives about one site, for the app row that stays in its place."""
+    raw = r.get("raw") or {}
+    city, st = _city_state(r)
+    return {"organizer": r.get("organizer_name"), "organizer_event_name": r.get("name"), "organizer_url": r.get("listing_url"),
+            "organizer_venue": r.get("venue_name"), "organizer_city": city, "organizer_state": st,
+            "organizer_address": raw.get("address"), "organizer_contacts": raw.get("contacts") or [],
+            "organizer_vendor_contact": ({"email": r.get("vendor_contact_email"), "name": r.get("vendor_contact_name")}
+                                         if r.get("vendor_contact_email") else None),
+            "organizer_age_divisions": r.get("age_groups"), "organizer_divisions": r.get("divisions") or [],
+            "organizer_gender": raw.get("gender"), "organizer_date_note": raw.get("date_note"),
+            "organizer_event_type": raw.get("event_type"), "organizer_college_coaches": raw.get("college_coaches"),
+            "organizer_team_count": r.get("team_count")}
 
 
 def main(argv=None):
@@ -805,8 +836,19 @@ def main(argv=None):
                 linked[i].append((jj, stj))
                 bj, dj = badge(stj, r, app[jj], rr, offj, pcj)
                 checks += check_records(stj, bj, dj, meansj, extraj, r, app[jj], rr, A[jj].start, now, with_org=False)
+            # the event's other copies matched for sure (a live Tourney Machine listing next to the sheet row) get their own
+            # badge too
+            for k in conf:
+                if k == primary: continue
+                jj, rr = m[k][0]
+                pcj = place_check(app[jj], r, rr)
+                offj = (r["start_date"] - A[jj].start).days
+                stj, meansj, extraj = status_for(k, app[jj], r, rr, offj, pcj)
+                linked[i].append((jj, stj))
+                bj, dj = badge(stj, r, app[jj], rr, offj, pcj)
+                checks += check_records(stj, bj, dj, meansj, extraj, r, app[jj], rr, A[jj].start, now, with_org=False)
 
-    site_extra, replaced_by = event_links(scr, app, sgroups, linked, hrows)
+    site_extra, replaced_by, tm_extra = event_links(scr, app, sgroups, linked, hrows)
     by_org_key = {f"{scr[i]['source']}:{scr[i]['source_event_id']}": x for i, x in site_extra.items()}
     for i, x in site_extra.items():
         lines[line_at[i]].update(last_year_here=last_year_text(x["last_year_venue"]) or x["last_year_venue_status"],
@@ -834,6 +876,12 @@ def main(argv=None):
     lines += old_lines; checks += old_recs
     for x in old_lines: counts[x["status"]] += 1
 
+    # every other upcoming lacrosse row the app shows gets a grey 'not checked' badge, so no row is left without one
+    have = {c["app_dedupe_key"] for c in checks}
+    unchecked = unchecked_records(app, have, scraped_orgs, now)
+    checks += unchecked
+    print(f"not checked against an organizer site: {len(unchecked)} app rows get a grey badge")
+
     order = ["CONFIRMED", "DATE CONFIRMED", "PLACE DIFFERS", "DATE MOVED", "DATE CONFLICT", "REVIEW", "NOT ON ORGANIZER SITE",
              "NEW SITE", "NEW", "OLD COPY", "GONE FROM ORGANIZER SITE"]
     lines.sort(key=lambda x: (order.index(x["status"]), str(x.get("organizer") or ""), str(x.get("start") or x.get("app_start"))))
@@ -850,6 +898,7 @@ def main(argv=None):
         k = c["app_dedupe_key"]
         if k in replaced_by: c["replaced_by"] = replaced_by[k]
         if k in by_org_key: c.update(by_org_key[k])
+        if k in tm_extra: c.update(tm_extra[k])
     in_app = {json.loads(l).get("dedupe_key") for l in open(export / "event_candidates.jsonl")}
     ready = [c for c in checks if c["app_dedupe_key"] in in_app]
     held = len(checks) - len(ready)
@@ -871,11 +920,36 @@ def main(argv=None):
     return out
 
 
+def unchecked_records(app, have, scraped_orgs, now):
+    """A grey badge for each upcoming lacrosse row no organizer website confirms or contradicts: a placeholder ('Predicted
+    from last year'), a Tourney Machine listing or a manual-sheet row. 'Not on organizer site yet' when we scrape the
+    organizer and its site doesn't list the event (yet), 'not checked' when we don't scrape that organizer."""
+    out = []
+    for a in app:
+        if a["dedupe_key"] in have or a.get("status") == "duplicate":
+            continue
+        org = canon_org(a.get("organizer_name")) or canon_org(org_from_name(a.get("name")))
+        ours = bool(org) and org in scraped_orgs
+        kind = a["_kind"]
+        lead = {"placeholder": "Predicted from last year", "tm": "Tourney Machine listing", "sheet": "Manual sheet"}.get(kind, "Listing")
+        tail = "not on organizer site yet" if ours else "not checked"
+        last = f" ({a['_last_year']})" if a.get("_last_year") else ""
+        what = {"placeholder": f"Dates and place copied from last year's Tourney Machine event{last} (+364 days).",
+                "tm": "Listed on Tourney Machine by its organizer.", "sheet": "Entered by hand in App data(manual-lacrosse-sheet)."}.get(kind, "")
+        why = (f"The organizer's website ({a.get('organizer_name') or org}) doesn't list it yet, so its date and place aren't confirmed."
+               if ours else "No organizer website we check lists this event, so nothing confirms its date or place.")
+        out.append({"app_dedupe_key": a["dedupe_key"], "status": "unchecked", "badge": f"⚪ {lead} · {tail}",
+                    "badge_description": f"{what} {why}".strip(), "details": why, "tags": [], "checked_at": now,
+                    "organizer": a.get("organizer_name"), "app_start": a.get("start_date"),
+                    "guessed_from": str(a["_last_year"]) if a.get("_last_year") else None, "organizer_scraped": ours})
+    return out
+
+
 STATUS_CODE = {"CONFIRMED": "confirmed", "DATE CONFIRMED": "date_confirmed", "PLACE DIFFERS": "place_differs",
                "DATE MOVED": "date_moved", "DATE CONFLICT": "date_conflict", "REVIEW": "review",
                "NOT ON ORGANIZER SITE": "not_on_organizer_site", "NEW": "new", "NEW SITE": "new"}
 STATUS_RANK = ["confirmed", "date_confirmed", "place_differs", "date_moved", "date_conflict", "review", "new", "not_on_organizer_site",
-               "superseded"]
+               "superseded", "unchecked"]
 
 
 def check_records(status, bdg, bdesc, details, tags, r, a, res, app_start, now, with_org=True):

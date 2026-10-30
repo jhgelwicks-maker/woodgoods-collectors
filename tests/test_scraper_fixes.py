@@ -477,3 +477,23 @@ def test_alliance_venues_and_state_from_home_page_and_location_list():
     page = ("Date : July 9th-11th, 2027 Cost : Youth (2030) - $4195 Location : Friday-Sunday: Maryland Soccerplex 2030AA & A, "
             "2031AA & A, 2032AA & A, 2033AA & A Troy Park & Blandair Park 2034 AA & A 2035 AA & A & 2036 Payment: A $1000 deposit")
     assert AllianceCollector.location_venues(page) == ["Maryland Soccerplex", "Troy Park", "Blandair Park"]
+
+
+def test_a_missing_state_comes_from_the_same_venues_other_events():
+    from collectors.woodgoods_lacrosse import fill_places
+    from core.model import Event
+    evs = [Event(organizer="MLT", name="Spring Jam", start_date=dt.date(2027, 5, 8), venue="Farmingdale State College", state="NY"),
+           Event(organizer="MLT", name="Summer Faceoff", start_date=dt.date(2027, 6, 5), venue="Farmingdale State College"),
+           Event(organizer="MLT", name="Odd One", start_date=dt.date(2027, 6, 5), venue="Somewhere Park")]
+    fill_places(evs)
+    assert evs[1].state == "NY" and evs[2].state is None
+
+
+def test_event_ages_ignore_the_events_own_year():
+    from collectors.common import event_ages
+    nov = dt.date(2026, 11, 7)
+    assert event_ages("2031 (8); 2032 (6); 2033 (6)", None, "2026 Liberty Rising Autumn Challenge", nov)[1:3] == (2031, 2033)
+    assert event_ages("2029s (18)", None, "Apex Sophomore Select 2026", nov)[1:3] == (2029, 2029)
+    assert event_ages(None, None, "2026 Fall Court Classic", nov)[1:3] == (None, None)       # just the event's year
+    assert event_ages(None, None, "Boys 2027 - 2036 Fall Brawl", nov)[1:3] == (2027, 2036)
+    assert event_ages("2026 (3); 2029 (5)", None, "Winter League", nov)[1:3] == (2029, 2029)    # 2026 grads have left

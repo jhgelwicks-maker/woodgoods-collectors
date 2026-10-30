@@ -282,7 +282,7 @@ def test_short_tourney_machine_venue_names_and_honest_venue_status():
 def test_a_possible_match_never_replaces_anything():
     scr = [{"source": "wg-x", "source_event_id": "a", "venue_name": "P", "raw": {}}]
     app = [{"_kind": "placeholder", "dedupe_key": "recurrence:h", "raw": {"history_id": "h"}}]
-    assert L.event_links(scr, app, {"g": [0]}, {0: [(0, "REVIEW")]}, {"h": {"id": "h", "start_date": "2025-01-01"}}) == ({}, {})
+    assert L.event_links(scr, app, {"g": [0]}, {0: [(0, "REVIEW")]}, {"h": {"id": "h", "start_date": "2025-01-01"}}) == ({}, {}, {})
 
 
 def test_send_event_sends_every_record_of_one_event(tmp_path, monkeypatch):
@@ -397,3 +397,43 @@ def test_records_not_applied_get_one_more_try_alone(monkeypatch):
     monkeypatch.setenv("INGEST_URL", "https://app.test/api/public/ingest"); monkeypatch.setenv("INGEST_KEY", "test-key")
     res = L.send_checks([{"app_dedupe_key": k, "status": "confirmed"} for k in ("a", "slow", "b")], size=10)
     assert calls == [3, 1] and res["applied"] == 3 and res["failed"] == []
+
+
+def test_a_live_tourney_machine_listing_stays_and_takes_the_organizer_details(tmp_path):
+    tm = {"source": "tourneymachine", "sport": "lacrosse", "status": "new", "name": "2026 Liberty National Elite Fall Classic",
+          "start_date": D(SAT), "end_date": D(SAT + 1), "city": "Aston", "state": "PA", "city_states": ["Aston, PA"],
+          "venue_name": "MSI Sports Complex", "venues": [{"venue_name": "MSI Sports Complex", "teams": 28}],
+          "dedupe_key": "tourneymachine:h1", "organizer_name": "Victory Event Series"}
+    sheet = {"source": "manual-lacrosse-sheet", "sport": "lacrosse", "status": "new", "name": "Liberty National Elite Fall Classic",
+             "start_date": D(SAT), "end_date": D(SAT + 1), "organizer_name": "Victory", "city": "Aston", "state": "PA",
+             "city_states": ["Aston, PA"], "dedupe_key": "manual-lacrosse-sheet:lnefc"}
+    o = {**org("Liberty National Elite Fall Classic", D(SAT), "Aston", "PA", venue="MSI Sports Complex"),
+         "source": "wg-victory", "source_event_id": "lnefc", "vendor_contact_email": "vendors@victoryeventseries.com",
+         "age_groups": "2027–2030"}
+    o["raw"].update(address="4881 Chichester Avenue, Aston, PA 19014",
+                    contacts=[{"name": None, "email": "vendors@victoryeventseries.com", "phone": None, "role": "vendor"}])
+    own = {**o, "status": "new", "dedupe_key": "wg-victory:lnefc"}
+    _run(tmp_path, [tm, sheet, own], [o])
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert recs["wg-victory:lnefc"]["replaced_by"] == "tourneymachine:h1"             # the organizer row gives way
+    assert recs["manual-lacrosse-sheet:lnefc"]["replaced_by"] == "tourneymachine:h1"  # and the sheet row points at TM too
+    t = recs["tourneymachine:h1"]
+    assert t["status"] == "confirmed" and t["takes_over"] == "wg-victory:lnefc"
+    assert (t["organizer_url"], t["organizer_address"], t["organizer_age_divisions"]) == (
+        "https://org.test/e", "4881 Chichester Avenue, Aston, PA 19014", "2027–2030")
+    assert t["organizer_vendor_contact"]["email"] == "vendors@victoryeventseries.com" and len(t["organizer_contacts"]) == 1
+    assert "manual-lacrosse-sheet:lnefc" in t["replaces"]
+
+
+def test_rows_no_organizer_site_confirms_get_a_grey_badge(tmp_path):
+    unseen = ph("Tidewater Shootout", D(50), "Norfolk", "VA", "h9")                       # an organizer we don't scrape
+    ours = {**ph("Victory Spring Splash", D(80), "Ocean City", "MD", "h8"), "organizer_name": "Victory"}   # scraped, not listed yet
+    tm = {"source": "tourneymachine", "sport": "lacrosse", "status": "new", "name": "Lehigh Valley Lax Fest", "start_date": D(60),
+          "end_date": D(60), "city": "Allentown", "state": "PA", "dedupe_key": "tourneymachine:h7", "organizer_name": "LV Lax"}
+    scraped = [{**org("Empire of The Sun", D(30), "Panama City Beach", "FL"), "source": "wg-victory", "source_event_id": "eots"}]
+    _run(tmp_path, [unseen, ours, tm], scraped, history=[{"id": "h9", "start_date": (TODAY - dt.timedelta(days=314)).isoformat()}])
+    recs = {r["app_dedupe_key"]: r for r in json.load(open(tmp_path / "report.checks.json"))}
+    assert recs["recurrence:h9"]["badge"] == "⚪ Predicted from last year · not checked" and recs["recurrence:h9"]["status"] == "unchecked"
+    assert "last year's Tourney Machine event" in recs["recurrence:h9"]["badge_description"]
+    assert recs["recurrence:h8"]["badge"] == "⚪ Predicted from last year · not on organizer site yet"
+    assert recs["tourneymachine:h7"]["badge"] == "⚪ Tourney Machine listing · not checked"

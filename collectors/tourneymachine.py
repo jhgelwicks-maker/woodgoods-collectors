@@ -204,7 +204,7 @@ def collect_history():
             row["short_id"] = None
             row["organizer_name"] = r.get("customer"); row["organizer_source"] = "listed"
             if not row["city_states"]: row["city_states"] = r.get("cityStates") or []
-            _, lo, hi, gender = common.parse_age_groups(f"{ev['divisions']} {ev['name']}", s0.year if s0 else None)
+            _, lo, hi, gender = common.event_ages(ev["divisions"], None, ev["name"], s0)
             row["age_groups"] = f"{lo}" if lo and lo == hi else (f"{lo}\u2013{hi}" if lo else None)
             row["grad_year_min"], row["grad_year_max"], row["gender"] = lo, hi, gender
             st = row["city_states"][0].split(", ")[-1] if row["city_states"] else None

@@ -255,7 +255,7 @@ def collect(start, end, tracked_only=True, with_sites=True, sink=None):
         if with_sites and ev["div_ids"]:
             per_site, games, sched_teams, fields, profile = site_counts(ev["tid"], ev["div_ids"][:MAX_DIVISIONS], ev["venues"])
         row = build_row(n, ev, per_site, games, sched_teams, fields, profile)
-        _, lo, hi, gender = common.parse_age_groups(f"{ev['divisions']} {ev['name']}", ev["start"].year if ev["start"] else None)
+        _, lo, hi, gender = common.event_ages(ev["divisions"], None, ev["name"], ev["start"])
         row["age_groups"] = f"{lo}" if lo and lo == hi else (f"{lo}\u2013{hi}" if lo else None)
         row["grad_year_min"], row["grad_year_max"], row["gender"] = lo, hi, gender
         st = (row["city_states"][0].split(", ")[-1] if row["city_states"] else None)

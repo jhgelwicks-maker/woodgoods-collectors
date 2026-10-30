@@ -154,13 +154,40 @@ def to_common(ev, collector_slug):
     }
 
 
+def fill_places(events):
+    """A state (and town) the organizer left off one event, taken from its other events at the same venue: MLT's 'Summer
+    Faceoff' at Farmingdale State College has none, its other Farmingdale State College events say NY. Only when every
+    such sibling agrees."""
+    key = lambda v: re.sub(r"[^a-z0-9]", "", (v or "").lower())
+    seen = {}
+    for ev in events:
+        for v, c, st, *_ in (ev.sites or [(ev.venue, ev.city, ev.state)]):
+            # a combined venue counts piece by piece ('Purchase College, NY & Blue Sky Sports Complex')
+            for piece in split_venues(v) if v else []:
+                name, pst = common_split(piece)
+                if name and (pst or st):
+                    seen.setdefault(key(name), set()).add((c if piece == v else None, pst or st))
+    def known(v):
+        places = seen.get(key(v)) or set()
+        states = {st for _, st in places}
+        towns = {c for c, _ in places if c}
+        return (next(iter(towns)) if len(towns) == 1 else None, next(iter(states))) if len(states) == 1 else (None, None)
+    for ev in events:
+        if ev.venue and not ev.state:
+            c, st = known(ev.venue)
+            if st:
+                ev.state, ev.city = st, ev.city or c
+        ev.sites = [(v, c or known(v)[0] if not st else c, st or known(v)[1], *rest) for v, c, st, *rest in ev.sites]
+    return events
+
+
 def collect(only=None):
     rows, errors = [], 0
     for cls in _load():
         if only and cls.slug not in only:
             continue
         c = cls()
-        evs = details.enrich(c, c.run())           # age divisions and contacts from each event's own page
+        evs = fill_places(details.enrich(c, c.run()))   # age divisions and contacts from each event's own page
         errors += len(c.errors)
         n = len(rows)
         for ev in evs:

@@ -81,12 +81,13 @@ def normalize_city_states(cs_list):
     return out
 
 # Age groups -> grad-year scale. "8th Grade (2031)", "U14", "14U", "2028 Boys", "HS", "Varsity", "Adult".
-def parse_age_groups(text, season_year=None):
-    """Returns (label, grad_min, grad_max, gender) or (None, None, None, None)."""
+def parse_age_groups(text, season_year=None, floor=None):
+    """Returns (label, grad_min, grad_max, gender) or (None, None, None, None). floor: the oldest class that can still
+    play (grad years below it are dates or old seasons, not divisions)."""
     if not text: return None, None, None, None
     y = season_year or datetime.date.today().year
     grads = set()
-    for m in re.finditer(r"\b(20[2-4]\d)\b", text): grads.add(int(m.group(1)))
+    for m in re.finditer(r"\b(20[2-4]\d)(?:'?s)?\b", text): grads.add(int(m.group(1)))      # '2029s', "2030's" too
     for m in re.finditer(r"\b(?:U|u)(\d{1,2})\b|\b(\d{1,2})(?:U|u)\b", text):
         age = int(m.group(1) or m.group(2))
         if 5 <= age <= 19: grads.add(y + (18 - age) + 1)      # U14 in 2026 -> class of 2031
@@ -94,6 +95,7 @@ def parse_age_groups(text, season_year=None):
         g = int(m.group(1))
         if 1 <= g <= 12: grads.add(y + (12 - g) + 1)
     if not grads and re.search(r"\b(HS|high school|varsity|JV)\b", text, re.I): grads.update({y + 1, y + 4})
+    if floor: grads = {g for g in grads if g >= floor}
     if re.search(r"\b(adult|men'?s|women'?s|masters|open)\b", text, re.I) and not grads: return "Adult", None, None, None
     gender = None
     if re.search(r"\b(boys?|men)\b", text, re.I) and not re.search(r"\b(girls?|women)\b", text, re.I): gender = "boys"
@@ -282,6 +284,23 @@ ORG_ALIASES = {"ptlacrosse": "primetime", "prime time": "primetime", "primetime 
                "aloha tournaments": "aloha", "alliance lacrosse league": "alliance", "premier lacrosse league": "pll", "pll": "pll"}
 _STOP = re.compile(r"\b(20\d\d|\d{1,3}(?:st|nd|rd|th)|annual|the|presented by.*$|powered by.*$|tournament|tourney|invitational|classic|showcase|event|lacrosse|lax|soccer|baseball|softball|volleyball|hockey|basketball|festival|fest|fair|boys|girls|youth|hs|high school|men'?s|women'?s)\b", re.I)
 
+SEASON_YEAR = re.compile(r"^\s*20\d\d(?:\s*[-/–]\s*(?:20)?\d\d)?\b\s*|\s*\b20\d\d(?:\s*[-/–]\s*(?:20)?\d\d)?\s*$")
+
+
+def event_ages(divisions, age_groups, name, start=None):
+    """(label, grad_min, grad_max, gender) for an event. The divisions say the ages when there are any ('Boys 2030 (7);
+    Boys 2031 (9)'); otherwise the name, without the event's own year at its start or end ('2026 Cowboy Cup', 'Gold Cup
+    2026', '2026-2027 Winter League'), which was being read as a grad year. Classes that have already graduated by the
+    event's school year are dropped (a November 2026 event's oldest players are the class of 2027)."""
+    season = start.year if start else None
+    floor = (start.year + 1 if start.month >= 8 else start.year) if start else None
+    divs = "; ".join(divisions) if isinstance(divisions, (list, tuple)) else (divisions or "")
+    src = " ".join(x for x in (divs, age_groups) if x) if divs else " ".join(x for x in (age_groups, SEASON_YEAR.sub(" ", name or "")) if x)
+    label, lo, hi, _ = parse_age_groups(src, season, floor)
+    gender = parse_age_groups(" ".join(x for x in (divs, age_groups, name) if x), season)[3]
+    return label, lo, hi, gender
+
+
 def canon_org(name):
     if not name: return None
     n = re.sub(r"[^a-z0-9 ]+", " ", name.lower()); n = re.sub(r"\s+", " ", n).strip()
@@ -353,8 +372,7 @@ def normalize(row):
     s, e = r.get("start_date"), r.get("end_date")
     r["days"] = (e - s).days + 1 if s and e else None
     r["is_league"] = bool(r["days"] and r["days"] > 3)
-    src = " ".join(str(x) for x in (r.get("divisions"), r.get("age_groups"), r.get("name")) if x)
-    label, lo, hi, gender = parse_age_groups(src, (s.year if s else None))
+    label, lo, hi, gender = event_ages(r.get("divisions"), r.get("age_groups"), r.get("name"), s if isinstance(s, datetime.date) else None)
     if lo: r["grad_year_min"], r["grad_year_max"] = lo, hi
     if label and not r.get("age_groups"): r["age_groups"] = label
     if gender and not (r.get("raw") or {}).get("gender"): r.setdefault("raw", {})["gender"] = gender
